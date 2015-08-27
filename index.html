@@ -23,7 +23,6 @@
 				position: absolute;
 				top: 0px; width: 100%;
 				padding: 5px;
-
 			}
 
 			a {
@@ -408,13 +407,14 @@
 
 			/* HERE ENDS SOME MORE NOISE */
 
-			varying vec3 vTexCoord3D ;
 			varying vec3 interpolatedNormal;
 			varying vec3 lightDirection;
+			varying vec4 fragWorldPos;
 			vec3 randVector;
 
 			void main()
 			{
+
 				vec3 timeVector = 0.3 * vec3(0.0, 0.0, time);
 				vec3 periodVector = vec3(50.0, 50.0, 50.0);
 
@@ -487,7 +487,8 @@
 
 				// Modelview transformation of 'varyings'
 				interpolatedNormal = normalize(mat3(modelViewMatrix) * newNormal);
-				lightDirection = normalize(mat3(modelViewMatrix) * normalize(vec3(1.0, 0.0, 2.0)));
+				lightDirection = normalize(mat3(modelViewMatrix) * normalize(vec3(0.0, 1.5, 1.0)));
+				fragWorldPos = gl_Position * modelMatrix;
 			}
 			
 		</script>
@@ -503,22 +504,26 @@
 			varying vec3 vTexCoord3D;
 			varying vec3 interpolatedNormal;
 			varying vec3 lightDirection;
+			varying vec4 fragWorldPos;
 	
 			void main()
 			{
-				//vec2 F = cellular(vec3(vTexCoord3D.x * 2.0, vTexCoord3D.y * 2.0 * time, vTexCoord3D.z * 2.0)) - 0.5;
-				//float n = 1.0 - min(F.x, 0.15);
-				//float m = min(F.y, 0.5);
-				//n = ( (n >= 0.85 && n <= 0.855) || (n >= 0.92 && n <= 0.925) ) ? n : 0.1;
-
-				//gl_FragColor = vec4(1.0 + 0.5 * sin(time), 0.0, 1.0, 1.0);
-				//gl_FragColor = vec4(n, n, n, 1.0);
-
 				float diffuseLighting = max(0.0, dot(lightDirection, interpolatedNormal));
 
-				vec3 diffuseColor = vec3(0.5,0.0,0.5);
+				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
+				vec3 specularColor = vec3(1.0, 1.0, 1.0);
+				vec3 viewDirection = normalize(vec3(0.0, 0.0, 500.0) - fragWorldPos.xyz);
 
-				gl_FragColor = vec4(diffuseColor * diffuseLighting, 1.0);
+				float specularPower = 64.0;
+
+				vec3 reflection = 2.0 * interpolatedNormal * dot(interpolatedNormal, lightDirection) - (lightDirection);
+				// eller
+				// vec3 reflection = reflect(lightDirection, interpolatedNormal);
+
+				float specularLighting = pow(max(0.0, dot(reflection, viewDirection)), specularPower);
+
+
+				gl_FragColor = vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
 		
 		</script>
@@ -529,12 +534,12 @@
 		<script src="js/three.min.js"></script>
 		<script src="js/controls/OrbitControls.js"></script>
 
-		<!-- <script src="js/Detector.js"></script>
-		<script src="js/libs/stats.min.js"></script> -->
+		<script src="js/Detector.js"></script>
+		<script src="js/libs/stats.min.js"></script>
 
 		<script>
 
-			// if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
 
 			var container, stats, start;
 			var camera, controls, scene, renderer;
@@ -621,13 +626,11 @@
 				container = document.getElementById( 'container' );
 				container.appendChild( renderer.domElement );
 
-				// stats = new Stats();
-				// stats.domElement.style.position = 'absolute';
-				// stats.domElement.style.top = '0px';
-				// stats.domElement.style.zIndex = 100;
-				// container.appendChild( stats.domElement );
-
-				//
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.top = '0px';
+				stats.domElement.style.zIndex = 100;
+				container.appendChild( stats.domElement );
 
 				window.addEventListener( 'resize', onWindowResize, false );
 
@@ -651,7 +654,7 @@
 				//console.log("Rendering!");
 				renderer.render( scene, camera );
 				uniforms.time.value = 0.0025 * (Date.now() - start);
-				//stats.update();
+				stats.update();
 
 			}
 
