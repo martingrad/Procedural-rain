@@ -43,6 +43,10 @@
 			#endif
 			
 			uniform float time;
+			uniform float sunPositionX;
+			uniform float sunPositionY;
+			uniform float sunPositionZ;
+			uniform vec3 cameraPosWorldSpace;
 
 			/* HERE COMES THE NOISE */
 
@@ -407,45 +411,48 @@
 
 			/* HERE ENDS SOME MORE NOISE */
 
-			varying vec3 interpolatedNormal;
-			varying vec3 lightDirection;
+			varying vec3 interpolatedNormalViewSpace;
+			varying vec3 interpolatedNormalWorldSpace;
+			varying vec3 lightDirectionViewSpace;
 			varying vec4 fragWorldPos;
+			varying vec4 lightPositionWorldSpace;
 			vec3 randVector;
 
 			void main()
 			{
-
 				vec3 timeVector = 0.3 * vec3(0.0, 0.0, time);
 				vec3 periodVector = vec3(50.0, 50.0, 50.0);
 
 				float texScale = 0.0005;
 
+				// Three frequencies of noise
 				float freq_low  = 17.0;
 				float freq_mid  = 67.0;
 				float freq_high = 192.0;
 
+				// Perlin noise function calls, returning [-1, 1]
 				float n1 = (pnoise(texScale * position.xyz * freq_low  + timeVector, periodVector) - 0.5) * 2.0;
 				float n2 = (pnoise(texScale * position.xyz * freq_mid  + timeVector, periodVector) - 0.5) * 2.0;
 				float n3 = (pnoise(texScale * position.xyz * freq_high + timeVector, periodVector) - 0.5) * 2.0;
 
 				// Sine wave to create waves
-				float w_ampl  = 7.0;
+				float w_ampl  = 5.0;
 				float w_freq  = 0.03;
 				float w_delay = 500.0;
 				float w_speed = 1.0;
 				float wave    = w_ampl * sin(w_freq * (w_delay + position.x) + w_speed * time);
 
 				// Displacement
-				float ampl_lowFreq = 3.0;
-				float ampl_mediumFreq = 0.7;
-				float ampl_highFreq = 0.2;
+				float ampl_lowFreq = 2.0;
+				float ampl_mediumFreq = 1.0;
+				float ampl_highFreq = 0.3;
 				float displacement = wave + ampl_lowFreq * n1 + ampl_mediumFreq * n2 + ampl_highFreq * n3;
 				
-				//Displaced position
+				// New, displaced position
 				vec3 displacedPosition = position.xyz + displacement * normal;
 				gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
 
-				/* --- Calculating new normals --- */
+				/* --- Approximating new normals --- */
 				
 				// Forward difference sample points
 				float h = 0.1;
@@ -485,10 +492,12 @@
 				// New normal
 				vec3 newNormal = normalize(cross(diffVectorX, diffVectorY));
 
-				// Modelview transformation of 'varyings'
-				interpolatedNormal = normalize(mat3(modelViewMatrix) * newNormal);
-				lightDirection = normalize(mat3(modelViewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
-				fragWorldPos = gl_Position * modelMatrix;
+				// Transformation of 'varyings'
+				interpolatedNormalWorldSpace = normalize(mat3(modelMatrix) * newNormal);
+				interpolatedNormalViewSpace = normalize(mat3(modelViewMatrix) * newNormal);
+				lightDirectionViewSpace = normalize(mat3(viewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
+				lightPositionWorldSpace = vec4(sunPositionX, sunPositionY, sunPositionZ, 1.0);
+				fragWorldPos = vec4(displacedPosition, 1.0) * modelMatrix; // gl_Position * modelMatrix;
 			}
 			
 		</script>
@@ -500,28 +509,36 @@
 			#endif
 
 			uniform float time;
+			uniform float sunPositionX;
+			uniform float sunPositionY;
+			uniform float sunPositionZ;
+			uniform vec3 cameraPosWorldSpace;
 
 			varying vec3 vTexCoord3D;
-			varying vec3 interpolatedNormal;
-			varying vec3 lightDirection;
+			varying vec3 interpolatedNormalViewSpace;
+			varying vec3 interpolatedNormalWorldSpace;
+			varying vec3 lightDirectionViewSpace;
 			varying vec4 fragWorldPos;
+			varying vec4 lightPositionWorldSpace;
 	
 			void main()
 			{
-				float diffuseLighting = max(0.0, dot(lightDirection, interpolatedNormal));
+				// Diffuse lighting in view space
+				float diffuseLighting = max(0.0, dot(lightDirectionViewSpace, interpolatedNormalViewSpace));
 
 				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
 				vec3 specularColor = vec3(1.0, 1.0, 1.0);
-				vec3 viewDirection = normalize(vec3(0.0, 0.0, 800.0) - fragWorldPos.xyz);
+				vec3 viewDirectionWorldSpace = -normalize(cameraPosWorldSpace - fragWorldPos.xyz);
+				vec3 lightDirectionWorldSpace = normalize(fragWorldPos.xyz - lightPositionWorldSpace.xyz);
 
-				float specularPower = 128.0;
+				float specularPower = 256.0;
 
-				vec3 reflection = 2.0 * interpolatedNormal * dot(interpolatedNormal, lightDirection) - (lightDirection);
+				// Specular lighting in world space
+				vec3 reflectionWorldSpace = 2.0 * interpolatedNormalWorldSpace * dot(interpolatedNormalWorldSpace, lightDirectionWorldSpace) - (lightDirectionWorldSpace);
 				// eller
-				// vec3 reflection = reflect(lightDirection, interpolatedNormal);
+				// vec3 reflectionWorldSpace = reflect(lightDirectionViewSpace, interpolatedNormalViewSpace);
 
-				float specularLighting = pow(max(0.0, dot(reflection, viewDirection)), specularPower);
-
+				float specularLighting = pow(max(0.0, dot(reflectionWorldSpace, viewDirectionWorldSpace)), specularPower);
 
 				gl_FragColor = vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
@@ -533,6 +550,7 @@
 		<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script>
 		<script src="js/three.min.js"></script>
 		<script src="js/controls/OrbitControls.js"></script>
+		<script src="js/controls/TrackballControls.js"></script>
 
 		<script src="js/Detector.js"></script>
 		<script src="js/libs/stats.min.js"></script>
@@ -544,6 +562,10 @@
 			var container, stats, start;
 			var camera, controls, scene, renderer;
 			var uniforms;
+			var sphere;
+			var sunPosition_x = -200.0;
+			var sunPosition_y = 2000.0;
+			var sunPosition_z = 300.0;
 
 			console.log("Initializing!");
 			init();
@@ -563,25 +585,45 @@
 
 				// Camera
 				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 2000 );
-				camera.position.z = 800;
+				camera.position.z = 500;
 
 				// Controls
+				/*
 				controls = new THREE.OrbitControls( camera );
 				controls.damping = 0.2;
 				//controls.addEventListener( 'change', render );
+				*/
+
+				controls = new THREE.TrackballControls( camera );
+
+				controls.rotateSpeed = 2.0;
+				controls.zoomSpeed = 1.2;
+				controls.panSpeed = 0.8;
+
+				controls.noZoom = false;
+				controls.noPan = false;
+
+				controls.staticMoving = true;
+				controls.dynamicDampingFactor = 0.3;
+
+				controls.keys = [ 65, 83, 68 ];
 
 				// Scene
 				scene = new THREE.Scene();
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// World
-				var geometry = /*new THREE.PlaneGeometry(50, 50, 50)*/ new THREE.PlaneGeometry( 400, 400, 128, 128);
+				var geometry = /*new THREE.PlaneGeometry(50, 50, 50)*/ new THREE.PlaneGeometry( 1200, 1200, 256, 256);
 				var material =  new THREE.MeshLambertMaterial( { color:0xffffff, shading: THREE.FlatShading } );
 
 				// Shader uniforms
 				uniforms = {
 				    time: { type: "f", value: start},
 				    resolution: { type: "v2", value: new THREE.Vector2 },
+				    sunPositionX: { type: "f", value: sunPosition_x},
+				    sunPositionY: { type: "f", value: sunPosition_y},
+				    sunPositionZ: { type: "f", value: sunPosition_z},
+				    cameraPosWorldSpace: { type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
 				    //texture: { type: "t", value: THREE.ImageUtils.loadTexture('./box.png') }
 				};
 
@@ -593,14 +635,16 @@
 					wireframe: false,
 				});
 
-				var mesh = new THREE.Mesh( geometry, shaderMaterial );
-				mesh.position.x = 0;
-				mesh.position.y = -300;
-				mesh.position.z = 0;
-				//mesh.rotation.x = 2.0;
-				mesh.updateMatrix();
-				mesh.matrixAutoUpdate = false;
-				scene.add( mesh );
+				var waterSurface = new THREE.Mesh( geometry, shaderMaterial );
+				waterSurface.position.x = 0;
+				waterSurface.position.y = 0;
+				waterSurface.position.z = 0;
+				//waterSurface.rotation.x = 2.0;
+				waterSurface.updateMatrix();
+				waterSurface.matrixAutoUpdate = false;
+				scene.add( waterSurface );
+
+				console.log(waterSurface.position.y);
 
 				// lights
 
@@ -615,9 +659,15 @@
 				//light = new THREE.AmbientLight( 0x222222 );
 				//scene.add( light );
 
+				// Sun sphere
+				var geometry = new THREE.SphereGeometry( 10, 32, 32 );
+				var material = new THREE.MeshBasicMaterial( {color: ("rgb(255, 0, 0)")} );
+
+				sphere = new THREE.Mesh( geometry, material );
+				scene.add( sphere );
+				sphere.position.set(sunPosition_x, sunPosition_y, sunPosition_z);
 
 				// renderer
-
 				renderer = new THREE.WebGLRenderer( { antialias: false } );
 				renderer.setClearColor( scene.fog.color );
 				renderer.setPixelRatio( window.devicePixelRatio );
@@ -635,7 +685,6 @@
 				window.addEventListener( 'resize', onWindowResize, false );
 
 				animate();
-
 			}
 
 			function onWindowResize() {
@@ -645,19 +694,21 @@
 
 				renderer.setSize( window.innerWidth, window.innerHeight );
 
-				//ender();
-
+				//render();
 			}
 
 			function render() {
 
 				//console.log("Rendering!");
+				sunPosition_x = 4.0 * Math.sin(0.001 * (Date.now() - start)) * 100;
+				uniforms.sunPositionX.value = sunPosition_x;
+				sphere.position.set(sunPosition_x, sunPosition_y, sunPosition_z);
+				//sphere.position.set(Math.sin(0.0025 * (Date.now() - start)) * 100, 200.0, 30.0);
+				uniforms.cameraPosWorldSpace.value = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 				renderer.render( scene, camera );
 				uniforms.time.value = 0.0025 * (Date.now() - start);
 				stats.update();
-
 			}
-
 
 		</script>
 
