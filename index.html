@@ -194,17 +194,20 @@
 				float n3 = (snoise(texScale * position.xyz * freq_high + timeVector) - 0.5) * 2.0;
 
 				// Sine wave to create waves
-				float w_ampl  = 4.0 * amplGain;
-				float w_freq  = 0.03 / amplGain;
+				float w1_ampl  = 4.0 * amplGain;
+				float w2_ampl  = 1.0 * amplGain;
+				float w1_freq  = 0.03 / amplGain;
+				float w2_freq  = 0.06 / amplGain;
 				float w_delay = 500.0;
 				float w_speed = 1.0;
-				float wave    = w_ampl * sin(w_freq * (w_delay + position.x) + w_speed * time);
+				float wave1   = w1_ampl * sin(w1_freq * (w_delay + position.x) + w_speed * time);
+				float wave2   = w2_ampl * sin(w2_freq * (w_delay + position.y) + w_speed * time);
 
 				// Displacement
 				float ampl_lowFreq = 0.5;
 				float ampl_mediumFreq = 0.15;
 				float ampl_highFreq = 0.10;
-				float displacement = wave + ampl_lowFreq * n1 + ampl_mediumFreq * n2 + ampl_highFreq * n3;
+				float displacement = wave1 + wave2 + ampl_lowFreq * n1 + ampl_mediumFreq * n2 + ampl_highFreq * n3;
 				
 				// New, displaced position
 				vec3 displacedPosition = position.xyz + displacement * normal;
@@ -224,10 +227,11 @@
 				float dnx3 = (snoise(texScale * forwardPointX * freq_high + timeVector) - 0.5) * 2.0;
 
 				// Sine wave value at sample point
-				wave = w_ampl * sin(w_freq * (w_delay + forwardPointX.x) + w_speed * time);
+				wave1 = w1_ampl * sin(w1_freq * (w_delay + forwardPointX.x) + w_speed * time);
+				wave2 = w2_ampl * sin(w2_freq * (w_delay + forwardPointX.y) + w_speed * time);
 
 				// Displacement
-				float forwardPointXDisp = wave + ampl_lowFreq * dnx1 + ampl_mediumFreq * dnx2 + ampl_highFreq * dnx3;
+				float forwardPointXDisp = wave1 + wave2 + ampl_lowFreq * dnx1 + ampl_mediumFreq * dnx2 + ampl_highFreq * dnx3;
 				vec3 forwardPointXDispPos = forwardPointX + forwardPointXDisp * normal;
 
 				// Y-axis
@@ -237,10 +241,11 @@
 				float dny3 = (snoise(texScale * forwardPointY * freq_high + timeVector) - 0.5) * 2.0;
 
 				// Sine wave value at sample point
-				wave = w_ampl * sin(w_freq * (w_delay + forwardPointY.x) + w_speed * time);
+				wave1 = w1_ampl * sin(w1_freq * (w_delay + forwardPointY.x) + w_speed * time);
+				wave2 = w2_ampl * sin(w2_freq * (w_delay + forwardPointY.y) + w_speed * time);
 
 				// Displacement
-				float forwardPointYDisp = wave + ampl_lowFreq * dny1 + ampl_mediumFreq * dny2 + ampl_highFreq * dny3;
+				float forwardPointYDisp = wave1 + wave2 + ampl_lowFreq * dny1 + ampl_mediumFreq * dny2 + ampl_highFreq * dny3;
 				vec3 forwardPointYDispPos = forwardPointY + forwardPointYDisp * normal;
 
 				// Difference vectors
@@ -439,10 +444,6 @@
 
 				// Compute refraction direction vector
 				vec3 refractionDirWorldSpace = refract(viewDirectionWorldSpace, interpolatedNormalWorldSpace, 0.75);
-				
-				// // Get normalized object coordinates
-				// float px = fragWorldPos.x / planeWidth + 0.5;
-				// float py = fragWorldPos.y / planeHeight + 0.5;
 
 				// Compute angle between refraction and 'down vector'
 				cos_alpha = dot(vec3(0.0, 0.0, -1.0), refractionDirWorldSpace);
@@ -474,7 +475,7 @@
 				// Compute angle between view direction and surface normal
 				//cos_alpha = max(0.0, dot(-viewDirectionWorldSpace, interpolatedNormalWorldSpace)) / 3.14;
 
-				gl_FragColor = 0.6 * refractionColor + 0.4 * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
+				gl_FragColor = 0.7 * refractionColor + 0.3 * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
 		
 		</script>
@@ -506,6 +507,8 @@
 			var sky_height = 1.0;
 			var ampl_gain = 1.0;
 
+			var sky_tex;
+
 			console.log("Initializing!");
 			init();
 			console.log("Start rendering!");
@@ -533,7 +536,7 @@
 				// World
 				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
 
-				var sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_01.jpg" );
+				sky_tex = THREE.ImageUtils.loadTexture( "img/martin.jpg" );
 				sky_tex.minFilter = THREE.LinearFilter;
 
 				var seabed_tex = THREE.ImageUtils.loadTexture( "img/tex_seabed_01.png" );
