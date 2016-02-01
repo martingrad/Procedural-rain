@@ -29,6 +29,26 @@
 				color: red;
 			}
 		</style>
+
+		<script type="text/javascript" src="js/dat.gui.js"></script>
+
+		<!-- GUI -->
+		<script type="text/javascript">
+		GuiContent = function() {
+			this.depth = 1.0;
+			//this.explode = function() {};
+		};
+
+		var gui_content;
+
+		window.onload = function() {
+			gui_content = new GuiContent();
+			var gui = new dat.GUI();
+			gui.add(gui_content, 'depth', 1, 10);
+			//gui.add(gui_content, 'explode');
+		};
+		</script>
+		
 	</head>
 
 	<body>
@@ -146,6 +166,7 @@
 			uniform float planeHeight;
 			uniform float seaDepth;
 			uniform float skyHeight;
+			uniform float amplGain;
 			uniform vec3 cameraPosWorldSpace;
 
 			varying vec3 interpolatedNormalViewSpace;
@@ -173,8 +194,8 @@
 				float n3 = (snoise(texScale * position.xyz * freq_high + timeVector) - 0.5) * 2.0;
 
 				// Sine wave to create waves
-				float w_ampl  = 4.0;
-				float w_freq  = 0.03;
+				float w_ampl  = 4.0 * amplGain;
+				float w_freq  = 0.03 / amplGain;
 				float w_delay = 500.0;
 				float w_speed = 1.0;
 				float wave    = w_ampl * sin(w_freq * (w_delay + position.x) + w_speed * time);
@@ -431,6 +452,9 @@
 				offset_x = tan(alpha) * seaDepth * refractionDirWorldSpace.x;
 				offset_y = tan(alpha) * seaDepth * refractionDirWorldSpace.y;
 
+				// Compute distance traveled (hypothenuse)
+				float refractionDist = cos(alpha) / seaDepth;
+
 				// Compute new sampling position (uv coordinates)
 				samplePos_x = px + offset_x;
 				samplePos_y = py + offset_y;
@@ -442,12 +466,15 @@
 				// Create 2D uv coordinates
 				vec2 texCoord2D_seabed = vec2(samplePos_x, samplePos_y);
 				// Sample seabed texture at these coordinates
-				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed);
+				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed) * refractionDist;
 
 				// Composite diffuse (sky), specular (sun) and reflection (sky texture)
 				// ====================================================================
 
-				gl_FragColor = refractionColor * 0.33 + reflectionColor * 0.33 + vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0) * 0.33;
+				// Compute angle between view direction and surface normal
+				//cos_alpha = max(0.0, dot(-viewDirectionWorldSpace, interpolatedNormalWorldSpace)) / 3.14;
+
+				gl_FragColor = 0.6 * refractionColor + 0.4 * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
 		
 		</script>
@@ -477,11 +504,12 @@
 			var plane_height = 1200;
 			var sea_depth = 1.0;
 			var sky_height = 1.0;
+			var ampl_gain = 1.0;
 
 			console.log("Initializing!");
 			init();
 			console.log("Start rendering!");
-			render();
+			//render();
 
 			function animate() {
 				//console.log("Animating!");
@@ -498,33 +526,12 @@
 				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 2000 );
 				camera.position.z = 500;
 
-				// Controls
-				/*
-				controls = new THREE.OrbitControls( camera );
-				controls.damping = 0.2;
-				//controls.addEventListener( 'change', render );
-				*/
-
-				controls = new THREE.TrackballControls( camera );
-
-				controls.rotateSpeed = 2.0;
-				controls.zoomSpeed = 1.2;
-				controls.panSpeed = 0.8;
-
-				controls.noZoom = false;
-				controls.noPan = false;
-
-				controls.staticMoving = true;
-				controls.dynamicDampingFactor = 0.3;
-
-				controls.keys = [ 65, 83, 68 ];
-
 				// Scene
 				scene = new THREE.Scene();
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// World
-				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 256, 256);
+				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
 
 				var sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_01.jpg" );
 				sky_tex.minFilter = THREE.LinearFilter;
@@ -542,6 +549,7 @@
 				    planeHeight: { type: "f", value: plane_height},
 				    seaDepth: { type: "f", value: sea_depth},
 				    skyHeight: { type: "f", value: sky_height},
+				    amplGain: { type: "f", value: ampl_gain},
 				    cameraPosWorldSpace: { type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
 				    // Textures
 					skyTexture : { type: "t", value: sky_tex},
@@ -567,19 +575,6 @@
 
 				console.log(waterSurface.position.y);
 
-				// lights
-
-				//light = new THREE.DirectionalLight( 0xffffff );
-				//light.position.set( 1, 1, 1 );
-				//scene.add( light );
-
-				//light = new THREE.DirectionalLight( 0x992222 );
-				//light.position.set( -1, -1, -1 );
-				//scene.add( light );
-
-				//light = new THREE.AmbientLight( 0x222222 );
-				//scene.add( light );
-
 				// Sun sphere
 				var geometry = new THREE.SphereGeometry( 10, 32, 32 );
 				var material = new THREE.MeshBasicMaterial( {color: ("rgb(255, 0, 0)")} );
@@ -597,6 +592,17 @@
 				container = document.getElementById( 'container' );
 				container.appendChild( renderer.domElement );
 
+				// Controls
+				controls = new THREE.TrackballControls( camera, renderer.domElement );
+				controls.rotateSpeed = 2.0;
+				controls.zoomSpeed = 1.2;
+				controls.panSpeed = 0.8;
+				controls.noZoom = false;
+				controls.noPan = false;
+				controls.staticMoving = true;
+				controls.dynamicDampingFactor = 0.3;
+				controls.keys = [ 65, 83, 68 ];
+
 				stats = new Stats();
 				stats.domElement.style.position = 'absolute';
 				stats.domElement.style.top = '0px';
@@ -608,24 +614,22 @@
 				animate();
 			}
 
-			function onWindowResize() {
-
+			function onWindowResize()
+			{
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
-
 				renderer.setSize( window.innerWidth, window.innerHeight );
-
-				//render();
 			}
 
-			function render() {
-
+			function render()
+			{
 				//console.log("Rendering!");
 				sunPosition_x = 4.0 * Math.sin(0.001 * (Date.now() - start)) * 100;
 				uniforms.sunPositionX.value = sunPosition_x;
 				sphere.position.set(sunPosition_x, sunPosition_y, sunPosition_z);
-				//sphere.position.set(Math.sin(0.0025 * (Date.now() - start)) * 100, 200.0, 30.0);
 				uniforms.cameraPosWorldSpace.value = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
+				uniforms.seaDepth.value = gui_content.depth;
+				uniforms.amplGain.value = 1.0 + 0.2 * gui_content.depth;
 				renderer.render( scene, camera );
 				uniforms.time.value = 0.0025 * (Date.now() - start);
 				stats.update();
