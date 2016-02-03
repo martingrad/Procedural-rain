@@ -179,21 +179,22 @@
 			void main()
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time);
-				vec3 stretchVector = vec3(0.45, 1.0, 1.0);
+				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
+				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
 				vec3 periodVector = vec3(50.0, 50.0, 50.0);
 
 				float texScale = 0.0005;
 
 				// Three frequencies of noise
-				float freq_low = 17.0;
+				float freq_low = 7.0 / amplGain;
 				float freq_mid = 67.0;
 
 				// Perlin noise function calls, returning [-1, 1]
-				float n1 = (snoise(texScale * position.xyz * stretchVector * freq_low  + timeVector) - 0.5) * 2.0;
-				float n2 = (snoise(texScale * position.xyz * stretchVector * freq_mid  + timeVector) - 0.5) * 2.0;
+				float n1 = snoise(texScale * position.xyz * stretchVector_lowFreq * freq_low + timeVector * 0.5);
+				float n2 = snoise(texScale * position.xyz * stretchVector_medFreq * freq_mid + timeVector);
 
 				// Displacement
-				float ampl_lowFreq = 2.5;
+				float ampl_lowFreq = 15.0 * (1.5 * amplGain);
 				float ampl_mediumFreq = 0.25;
 				float displacement = ampl_lowFreq * n1 + ampl_mediumFreq * n2;
 				
@@ -210,8 +211,8 @@
 
 				// X-axis
 				// Noise value at sample point
-				float dnx1 = (snoise(texScale * forwardPointX * stretchVector * freq_low  + timeVector) - 0.5) * 2.0;
-				float dnx2 = (snoise(texScale * forwardPointX * stretchVector * freq_mid  + timeVector) - 0.5) * 2.0;
+				float dnx1 = snoise(texScale * forwardPointX * stretchVector_lowFreq * freq_low + timeVector * 0.5);
+				float dnx2 = snoise(texScale * forwardPointX * stretchVector_medFreq * freq_mid + timeVector);
 
 				// Displacement
 				float forwardPointXDisp = ampl_lowFreq * dnx1 + ampl_mediumFreq * dnx2;
@@ -219,8 +220,8 @@
 
 				// Y-axis
 				// Noise value at sample point
-				float dny1 = (snoise(texScale * forwardPointY * stretchVector * freq_low  + timeVector) - 0.5) * 2.0;
-				float dny2 = (snoise(texScale * forwardPointY * stretchVector * freq_mid  + timeVector) - 0.5) * 2.0;
+				float dny1 = snoise(texScale * forwardPointY * stretchVector_lowFreq * freq_low + timeVector * 0.5);
+				float dny2 = snoise(texScale * forwardPointY * stretchVector_medFreq * freq_mid + timeVector);
 
 				// Displacement
 				float forwardPointYDisp = ampl_lowFreq * dny1 + ampl_mediumFreq * dny2;
@@ -455,7 +456,7 @@
 				// Compute angle between view direction and surface normal
 				cos_alpha = abs(dot(viewDirectionWorldSpace, interpolatedNormalWorldSpace));
 
-				gl_FragColor = cos_alpha * refractionColor + (1.0 - cos_alpha) * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
+				gl_FragColor = (0.25 + 0.5 * cos_alpha) * refractionColor + (0.25 + 0.5 * (1.0 - cos_alpha)) * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
 		
 		</script>
@@ -475,6 +476,9 @@
 			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
 
 			var container, stats, start;
+			var pauseTime = 0.0;
+			var elapsedPauseTime = 0.0;
+			var animationIsPaused = false;
 			var camera, controls, scene, renderer;
 			var uniforms;
 			var sphere;
@@ -486,13 +490,20 @@
 			var sea_depth = 1.0;
 			var sky_height = 1.0;
 			var ampl_gain = 1.0;
-
 			var sky_tex;
 
-			console.log("Initializing!");
+			document.addEventListener("keyup", function(event) { 
+				if(event.which == 32) {
+					if(!animationIsPaused) {
+						pauseTime = Date.now();
+					} else {
+						start += elapsedPauseTime;
+					}
+					animationIsPaused = !animationIsPaused;
+				}
+			}, false);
+
 			init();
-			console.log("Start rendering!");
-			//render();
 
 			function animate() {
 				//console.log("Animating!");
@@ -612,9 +623,14 @@
 				sphere.position.set(sunPosition_x, sunPosition_y, sunPosition_z);
 				uniforms.cameraPosWorldSpace.value = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 				uniforms.seaDepth.value = gui_content.depth;
-				uniforms.amplGain.value = 1.0 + 0.2 * gui_content.depth;
+				uniforms.amplGain.value = 0.9 + 0.1 * gui_content.depth;
 				renderer.render( scene, camera );
-				uniforms.time.value = 0.0025 * (Date.now() - start);
+				if(!animationIsPaused)
+				{
+					uniforms.time.value = 0.0025 * (Date.now() - start);
+				} else {
+					elapsedPauseTime = Date.now() - pauseTime;
+				}
 				stats.update();
 			}
 
