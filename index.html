@@ -178,36 +178,24 @@
 
 			void main()
 			{
-				vec3 timeVector = 0.3 * vec3(0.0, 0.0, time);
+				vec3 timeVector = 0.3 * vec3(0.0, time, time);
+				vec3 stretchVector = vec3(0.45, 1.0, 1.0);
 				vec3 periodVector = vec3(50.0, 50.0, 50.0);
 
 				float texScale = 0.0005;
 
 				// Three frequencies of noise
-				float freq_low  = 17.0;
-				float freq_mid  = 67.0;
-				float freq_high = 192.0;
+				float freq_low = 17.0;
+				float freq_mid = 67.0;
 
 				// Perlin noise function calls, returning [-1, 1]
-				float n1 = (snoise(texScale * position.xyz * freq_low  + timeVector) - 0.5) * 2.0;
-				float n2 = (snoise(texScale * position.xyz * freq_mid  + timeVector) - 0.5) * 2.0;
-				float n3 = (snoise(texScale * position.xyz * freq_high + timeVector) - 0.5) * 2.0;
-
-				// Sine wave to create waves
-				float w1_ampl  = 4.0 * amplGain;
-				float w2_ampl  = 1.0 * amplGain;
-				float w1_freq  = 0.03 / amplGain;
-				float w2_freq  = 0.06 / amplGain;
-				float w_delay = 500.0;
-				float w_speed = 1.0;
-				float wave1   = w1_ampl * sin(w1_freq * (w_delay + position.x) + w_speed * time);
-				float wave2   = w2_ampl * sin(w2_freq * (w_delay + position.y) + w_speed * time);
+				float n1 = (snoise(texScale * position.xyz * stretchVector * freq_low  + timeVector) - 0.5) * 2.0;
+				float n2 = (snoise(texScale * position.xyz * stretchVector * freq_mid  + timeVector) - 0.5) * 2.0;
 
 				// Displacement
-				float ampl_lowFreq = 0.5;
-				float ampl_mediumFreq = 0.15;
-				float ampl_highFreq = 0.10;
-				float displacement = wave1 + wave2 + ampl_lowFreq * n1 + ampl_mediumFreq * n2 + ampl_highFreq * n3;
+				float ampl_lowFreq = 2.5;
+				float ampl_mediumFreq = 0.25;
+				float displacement = ampl_lowFreq * n1 + ampl_mediumFreq * n2;
 				
 				// New, displaced position
 				vec3 displacedPosition = position.xyz + displacement * normal;
@@ -222,30 +210,20 @@
 
 				// X-axis
 				// Noise value at sample point
-				float dnx1 = (snoise(texScale * forwardPointX * freq_low  + timeVector) - 0.5) * 2.0;
-				float dnx2 = (snoise(texScale * forwardPointX * freq_mid  + timeVector) - 0.5) * 2.0;
-				float dnx3 = (snoise(texScale * forwardPointX * freq_high + timeVector) - 0.5) * 2.0;
-
-				// Sine wave value at sample point
-				wave1 = w1_ampl * sin(w1_freq * (w_delay + forwardPointX.x) + w_speed * time);
-				wave2 = w2_ampl * sin(w2_freq * (w_delay + forwardPointX.y) + w_speed * time);
+				float dnx1 = (snoise(texScale * forwardPointX * stretchVector * freq_low  + timeVector) - 0.5) * 2.0;
+				float dnx2 = (snoise(texScale * forwardPointX * stretchVector * freq_mid  + timeVector) - 0.5) * 2.0;
 
 				// Displacement
-				float forwardPointXDisp = wave1 + wave2 + ampl_lowFreq * dnx1 + ampl_mediumFreq * dnx2 + ampl_highFreq * dnx3;
+				float forwardPointXDisp = ampl_lowFreq * dnx1 + ampl_mediumFreq * dnx2;
 				vec3 forwardPointXDispPos = forwardPointX + forwardPointXDisp * normal;
 
 				// Y-axis
 				// Noise value at sample point
-				float dny1 = (snoise(texScale * forwardPointY * freq_low  + timeVector) - 0.5) * 2.0;
-				float dny2 = (snoise(texScale * forwardPointY * freq_mid  + timeVector) - 0.5) * 2.0;
-				float dny3 = (snoise(texScale * forwardPointY * freq_high + timeVector) - 0.5) * 2.0;
-
-				// Sine wave value at sample point
-				wave1 = w1_ampl * sin(w1_freq * (w_delay + forwardPointY.x) + w_speed * time);
-				wave2 = w2_ampl * sin(w2_freq * (w_delay + forwardPointY.y) + w_speed * time);
+				float dny1 = (snoise(texScale * forwardPointY * stretchVector * freq_low  + timeVector) - 0.5) * 2.0;
+				float dny2 = (snoise(texScale * forwardPointY * stretchVector * freq_mid  + timeVector) - 0.5) * 2.0;
 
 				// Displacement
-				float forwardPointYDisp = wave1 + wave2 + ampl_lowFreq * dny1 + ampl_mediumFreq * dny2 + ampl_highFreq * dny3;
+				float forwardPointYDisp = ampl_lowFreq * dny1 + ampl_mediumFreq * dny2;
 				vec3 forwardPointYDispPos = forwardPointY + forwardPointYDisp * normal;
 
 				// Difference vectors
@@ -260,7 +238,7 @@
 				interpolatedNormalViewSpace = normalize(mat3(modelViewMatrix) * newNormal);
 				lightDirectionViewSpace = normalize(mat3(viewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
 				lightPositionWorldSpace = vec4(sunPositionX, sunPositionY, sunPositionZ, 1.0);
-				fragWorldPos = vec4(displacedPosition, 1.0) * modelMatrix; // gl_Position * modelMatrix;
+				fragWorldPos = vec4(displacedPosition, 1.0) * modelMatrix;
 			}
 			
 		</script>
@@ -404,15 +382,17 @@
 				// Specular lighting, sun (world space)
 				// ====================================
 
-				// Compute reflection direction vector (Blinn-phong)
+				// Compute reflection direction vector (Blinn-Phong)
 				vec3 reflectionWorldSpace = 2.0 * interpolatedNormalWorldSpace * dot(interpolatedNormalWorldSpace, lightDirectionWorldSpace) - (lightDirectionWorldSpace);
 				float specularLighting = pow(max(0.0, dot(reflectionWorldSpace, viewDirectionWorldSpace)), specularPower);
 
 				// Reflection (sky)
 				// ================
 
-				// Compute reflection direction vector (Blinn-phong)
+				// Compute reflection direction vector (Blinn-Phong)
 				vec3 reflectionDirWorldSpace = normalize(2.0 * interpolatedNormalWorldSpace * dot(interpolatedNormalWorldSpace, viewDirectionWorldSpace) - (viewDirectionWorldSpace));
+
+				// Glossy reflection
 
 				// Get normalized object coordinates
 				float px = fragWorldPos.x / planeWidth + 0.5;
@@ -454,7 +434,7 @@
 				offset_y = tan(alpha) * seaDepth * refractionDirWorldSpace.y;
 
 				// Compute distance traveled (hypothenuse)
-				float refractionDist = cos(alpha) / seaDepth;
+				float refractionDist = cos_alpha / seaDepth;
 
 				// Compute new sampling position (uv coordinates)
 				samplePos_x = px + offset_x;
@@ -473,9 +453,9 @@
 				// ====================================================================
 
 				// Compute angle between view direction and surface normal
-				//cos_alpha = max(0.0, dot(-viewDirectionWorldSpace, interpolatedNormalWorldSpace)) / 3.14;
+				cos_alpha = abs(dot(viewDirectionWorldSpace, interpolatedNormalWorldSpace));
 
-				gl_FragColor = 0.7 * refractionColor + 0.3 * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
+				gl_FragColor = cos_alpha * refractionColor + (1.0 - cos_alpha) * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
 		
 		</script>
@@ -536,7 +516,7 @@
 				// World
 				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
 
-				sky_tex = THREE.ImageUtils.loadTexture( "img/martin.jpg" );
+				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_07.png" );
 				sky_tex.minFilter = THREE.LinearFilter;
 
 				var seabed_tex = THREE.ImageUtils.loadTexture( "img/tex_seabed_01.png" );
