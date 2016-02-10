@@ -36,6 +36,10 @@
 		<script type="text/javascript">
 		GuiContent = function() {
 			this.depth = 1.0;
+			this.skyHue = 169.0 / 360.0;
+			this.reflectivity = 0.5;
+			this.refractivity = 0.5;
+			this.reflectionLength = 1.0;
 			//this.explode = function() {};
 		};
 
@@ -45,6 +49,10 @@
 			gui_content = new GuiContent();
 			var gui = new dat.GUI();
 			gui.add(gui_content, 'depth', 1, 10);
+			gui.add(gui_content, 'skyHue', 0, 1);
+			gui.add(gui_content, 'reflectivity', 0, 1);
+			gui.add(gui_content, 'refractivity', 0, 1);
+			gui.add(gui_content, 'reflectionLength', 0, 2);
 			//gui.add(gui_content, 'explode');
 		};
 		</script>
@@ -165,6 +173,10 @@
 			uniform float planeWidth;
 			uniform float planeHeight;
 			uniform float seaDepth;
+			uniform float skyHue;
+			uniform float reflectivity;
+			uniform float refractivity;
+			uniform float reflectionLength;
 			uniform float skyHeight;
 			uniform float amplGain;
 			uniform vec3 cameraPosWorldSpace;
@@ -174,6 +186,9 @@
 			varying vec3 lightDirectionViewSpace;
 			varying vec4 fragWorldPos;
 			varying vec4 lightPositionWorldSpace;
+
+			varying vec3 test;
+
 			vec3 randVector;
 
 			void main()
@@ -194,7 +209,7 @@
 				float n2 = snoise(texScale * position.xyz * stretchVector_medFreq * freq_mid + timeVector);
 
 				// Displacement
-				float ampl_lowFreq = 15.0 * (1.5 * amplGain);
+				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
 				float ampl_mediumFreq = 0.25;
 				float displacement = ampl_lowFreq * n1 + ampl_mediumFreq * n2;
 				
@@ -240,6 +255,8 @@
 				lightDirectionViewSpace = normalize(mat3(viewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
 				lightPositionWorldSpace = vec4(sunPositionX, sunPositionY, sunPositionZ, 1.0);
 				fragWorldPos = vec4(displacedPosition, 1.0) * modelMatrix;
+
+				test = vec3(n2) * 1.0;
 			}
 			
 		</script>
@@ -346,11 +363,67 @@
 
 			/* HERE ENDS THE NOISE */
 
+			/* === hsl2rgb, https://github.com/Jam3/glsl-hsl2rgb/blob/master/index.glsl === */
+			/* ============================================================================ */
+
+			float hue2rgb(float f1, float f2, float hue)
+			{
+			    if (hue < 0.0)
+			        hue += 1.0;
+			    else if (hue > 1.0)
+			        hue -= 1.0;
+			    float res;
+			    if ((6.0 * hue) < 1.0)
+			        res = f1 + (f2 - f1) * 6.0 * hue;
+			    else if ((2.0 * hue) < 1.0)
+			        res = f2;
+			    else if ((3.0 * hue) < 2.0)
+			        res = f1 + (f2 - f1) * ((2.0 / 3.0) - hue) * 6.0;
+			    else
+			        res = f1;
+			    return res;
+			}
+
+			vec3 hsl2rgb(vec3 hsl)
+			{
+			    vec3 rgb;
+			    
+			    if (hsl.y == 0.0) {
+			        rgb = vec3(hsl.z); // Luminance
+			    } else {
+			        float f2;
+			        
+			        if (hsl.z < 0.5)
+			            f2 = hsl.z * (1.0 + hsl.y);
+			        else
+			            f2 = hsl.z + hsl.y - hsl.y * hsl.z;
+			            
+			        float f1 = 2.0 * hsl.z - f2;
+			        
+			        rgb.r = hue2rgb(f1, f2, hsl.x + (1.0/3.0));
+			        rgb.g = hue2rgb(f1, f2, hsl.x);
+			        rgb.b = hue2rgb(f1, f2, hsl.x - (1.0/3.0));
+			    }   
+			    return rgb;
+			}
+
+			vec3 hsl2rgb(float h, float s, float l)
+			{
+			    return hsl2rgb(vec3(h, s, l));
+			}
+
+			/* ================================= !hsl2rgb ================================= */
+			/* ============================================================================ */
+
 			uniform float time;
 			uniform float sunPositionX;
 			uniform float sunPositionY;
 			uniform float sunPositionZ;
 			uniform float seaDepth;
+			uniform float skyHue;
+			uniform float reflectivity;
+			uniform float refractivity;
+			uniform float reflectionLength;
 			uniform float skyHeight;
 			uniform float planeWidth;
 			uniform float planeHeight;
@@ -364,6 +437,8 @@
 			varying vec3 lightDirectionViewSpace;
 			varying vec4 fragWorldPos;
 			varying vec4 lightPositionWorldSpace;
+
+			varying vec3 test;
 	
 			void main()
 			{
@@ -393,19 +468,36 @@
 				// Compute reflection direction vector (Blinn-Phong)
 				vec3 reflectionDirWorldSpace = normalize(2.0 * interpolatedNormalWorldSpace * dot(interpolatedNormalWorldSpace, viewDirectionWorldSpace) - (viewDirectionWorldSpace));
 
-				// Glossy reflection
-
 				// Get normalized object coordinates
 				float px = fragWorldPos.x / planeWidth + 0.5;
 				float py = fragWorldPos.y / planeHeight + 0.5;
 
-				// Compute angle between reflection and 'up' vector
-				float cos_alpha = dot(vec3(0.0, 0.0, 1.0), reflectionDirWorldSpace);
+				// Compute 3D noise sampling position
+				float step = reflectionLength;
+				vec3 texCoord3D = vec3(px, py, 0.0) + reflectionDirWorldSpace * step;
+
+				// Sample 3D noise function at these coordinates
+				float hue = skyHue;
+				float saturation = 0.55;
+				float lightness = (snoise(texCoord3D) + 1.0) / 2.0;
+				vec4 reflectionColor = vec4( hsl2rgb(hue, saturation, lightness), 1.0 );
+
+				// Refraction (seabed)
+				// ===================
+
+				// Compute refraction direction vector
+				vec3 refractionDirWorldSpace = refract(viewDirectionWorldSpace, interpolatedNormalWorldSpace, 0.75);
+
+				// Compute angle between refraction and 'down' vector
+				float cos_alpha = dot(vec3(0.0, 0.0, -1.0), refractionDirWorldSpace);
 				float alpha = acos(cos_alpha);
 
 				// Compute sampling offset
-				float offset_x = tan(alpha) * skyHeight * reflectionDirWorldSpace.x;
-				float offset_y = tan(alpha) * skyHeight * reflectionDirWorldSpace.y;
+				float offset_x = tan(alpha) * seaDepth * refractionDirWorldSpace.x;
+				float offset_y = tan(alpha) * seaDepth * refractionDirWorldSpace.y;
+
+				// Compute distance traveled (hypothenuse)
+				float refractionDist = cos_alpha / seaDepth;
 
 				// Compute new sampling position (uv coordinates)
 				float samplePos_x = px + offset_x;
@@ -416,39 +508,15 @@
 				samplePos_y = (samplePos_y < 0.0) ? mod(samplePos_y + 1.0, 1.0) : mod(samplePos_y, 1.0);
 
 				// Create 2D uv coordinates
-				vec2 texCoord2D_sky = vec2(samplePos_x, samplePos_y);
-				// Sample seabed texture at these coordinates
-				vec4 reflectionColor = texture2D(skyTexture, texCoord2D_sky);
-
-				// Refraction (seabed)
-				// ===================
-
-				// Compute refraction direction vector
-				vec3 refractionDirWorldSpace = refract(viewDirectionWorldSpace, interpolatedNormalWorldSpace, 0.75);
-
-				// Compute angle between refraction and 'down vector'
-				cos_alpha = dot(vec3(0.0, 0.0, -1.0), refractionDirWorldSpace);
-				alpha = acos(cos_alpha);
-
-				// Compute sampling offset
-				offset_x = tan(alpha) * seaDepth * refractionDirWorldSpace.x;
-				offset_y = tan(alpha) * seaDepth * refractionDirWorldSpace.y;
-
-				// Compute distance traveled (hypothenuse)
-				float refractionDist = cos_alpha / seaDepth;
-
-				// Compute new sampling position (uv coordinates)
-				samplePos_x = px + offset_x;
-				samplePos_y = py + offset_y;
-
-				// Texture tiling/repeating
-				samplePos_x = (samplePos_x < 0.0) ? mod(samplePos_x + 1.0, 1.0) : mod(samplePos_x, 1.0);
-				samplePos_y = (samplePos_y < 0.0) ? mod(samplePos_y + 1.0, 1.0) : mod(samplePos_y, 1.0);
-
-				// Create 2D uv coordinates
 				vec2 texCoord2D_seabed = vec2(samplePos_x, samplePos_y);
 				// Sample seabed texture at these coordinates
 				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed) * refractionDist;
+
+				// Diffuse sky reflection
+				float blubb = pow(dot(vec3(0.0, 0.0, 1.0), interpolatedNormalWorldSpace), 8.0);
+
+				refractionColor += vec4(0.02, 0.08, 0.2, 1.0);
+				refractionColor *= blubb;
 
 				// Composite diffuse (sky), specular (sun) and reflection (sky texture)
 				// ====================================================================
@@ -456,7 +524,10 @@
 				// Compute angle between view direction and surface normal
 				cos_alpha = abs(dot(viewDirectionWorldSpace, interpolatedNormalWorldSpace));
 
-				gl_FragColor = (0.25 + 0.5 * cos_alpha) * refractionColor + (0.25 + 0.5 * (1.0 - cos_alpha)) * reflectionColor + 0.0 * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
+				float k_refr = refractivity; //(0.25 + 0.5 * cos_alpha);
+				float k_refl = reflectivity; //(0.25 + 0.5 * (1.0 - cos_alpha));
+				float k_phong = 0.0;
+				gl_FragColor = k_refr * refractionColor + k_refl * reflectionColor + k_phong * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
 		
 		</script>
@@ -488,6 +559,10 @@
 			var plane_width  = 1200;
 			var plane_height = 1200;
 			var sea_depth = 1.0;
+			var sky_hue = 169.0 / 360.0;
+			var _reflectivity = 1.0;
+			var _refractivity = 1.0;
+			var _reflectionLength = 1.0;
 			var sky_height = 1.0;
 			var ampl_gain = 1.0;
 			var sky_tex;
@@ -525,9 +600,9 @@
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// World
-				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
+				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 32, 32);
 
-				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_07.png" );
+				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg" );
 				sky_tex.minFilter = THREE.LinearFilter;
 
 				var seabed_tex = THREE.ImageUtils.loadTexture( "img/tex_seabed_01.png" );
@@ -542,7 +617,11 @@
 				    planeWidth: { type: "f", value: plane_width},
 				    planeHeight: { type: "f", value: plane_height},
 				    seaDepth: { type: "f", value: sea_depth},
+				    skyHue: { type: "f", value: sky_hue},
 				    skyHeight: { type: "f", value: sky_height},
+				    reflectivity: { type: "f", value: _reflectivity},
+				    refractivity: { type: "f", value: _refractivity},
+				    reflectionLength: { type: "f", value: _reflectionLength},
 				    amplGain: { type: "f", value: ampl_gain},
 				    cameraPosWorldSpace: { type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
 				    // Textures
@@ -621,10 +700,17 @@
 				sunPosition_x = 4.0 * Math.sin(0.001 * (Date.now() - start)) * 100;
 				uniforms.sunPositionX.value = sunPosition_x;
 				sphere.position.set(sunPosition_x, sunPosition_y, sunPosition_z);
+				
 				uniforms.cameraPosWorldSpace.value = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 				uniforms.seaDepth.value = gui_content.depth;
+				uniforms.skyHue.value = gui_content.skyHue;
+				uniforms.reflectivity.value = gui_content.reflectivity;
+				uniforms.refractivity.value = gui_content.refractivity;
+				uniforms.reflectionLength.value = gui_content.reflectionLength;
 				uniforms.amplGain.value = 0.9 + 0.1 * gui_content.depth;
+				
 				renderer.render( scene, camera );
+				
 				if(!animationIsPaused)
 				{
 					uniforms.time.value = 0.0025 * (Date.now() - start);
