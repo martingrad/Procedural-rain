@@ -36,7 +36,8 @@
 		<script type="text/javascript">
 		GuiContent = function() {
 			this.depth = 1.0;
-			this.skyHue = 169.0 / 360.0;
+			this.skyHue = 185.0 / 360.0;
+			this.waterHue = 230.0 / 360.0;
 			this.reflectivity = 0.5;
 			this.refractivity = 0.5;
 			this.reflectionLength = 1.0;
@@ -50,6 +51,7 @@
 			var gui = new dat.GUI();
 			gui.add(gui_content, 'depth', 1, 10);
 			gui.add(gui_content, 'skyHue', 0, 1);
+			gui.add(gui_content, 'waterHue', 0, 1);
 			gui.add(gui_content, 'reflectivity', 0, 1);
 			gui.add(gui_content, 'refractivity', 0, 1);
 			gui.add(gui_content, 'reflectionLength', 0, 2);
@@ -174,6 +176,7 @@
 			uniform float planeHeight;
 			uniform float seaDepth;
 			uniform float skyHue;
+			uniform float waterHue;
 			uniform float reflectivity;
 			uniform float refractivity;
 			uniform float reflectionLength;
@@ -191,12 +194,11 @@
 
 			vec3 randVector;
 
-			void main()
+			float vertexDisplacement(vec3 pos)
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time);
 				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
 				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
-				vec3 periodVector = vec3(50.0, 50.0, 50.0);
 
 				float texScale = 0.0005;
 
@@ -205,41 +207,46 @@
 				float freq_mid = 67.0;
 
 				// Perlin noise function calls, returning [-1, 1]
-				float n1 = snoise(texScale * position.xyz * stretchVector_lowFreq * freq_low + timeVector * 0.5);
-				float n2 = snoise(texScale * position.xyz * stretchVector_medFreq * freq_mid + timeVector);
+				float n1 = snoise(texScale * pos * stretchVector_lowFreq * freq_low + timeVector * 0.5);
+				float n2 = snoise(texScale * pos * stretchVector_medFreq * freq_mid + timeVector);
+
+				n1 += 1.0;
+				n2 += 1.0;
 
 				// Displacement
 				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
 				float ampl_mediumFreq = 0.25;
-				float displacement = ampl_lowFreq * n1 + ampl_mediumFreq * n2;
-				
+
+				return ampl_lowFreq * n1 + ampl_mediumFreq * n2;
+			}
+
+			void main()
+			{
+				float displacement = vertexDisplacement(position.xyz);
+
 				// New, displaced position
 				vec3 displacedPosition = position.xyz + displacement * normal;
 				gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
 
 				/* --- Approximating new normals --- */
-				
+							
 				// Forward difference sample points
-				float h = 0.1;
+				float h = 0.01;
 				vec3 forwardPointX = vec3(position.x + h, position.y, position.z);
 				vec3 forwardPointY = vec3(position.x, position.y + h, position.z);
 
 				// X-axis
 				// Noise value at sample point
-				float dnx1 = snoise(texScale * forwardPointX * stretchVector_lowFreq * freq_low + timeVector * 0.5);
-				float dnx2 = snoise(texScale * forwardPointX * stretchVector_medFreq * freq_mid + timeVector);
+				float forwardPointXDisp = vertexDisplacement(forwardPointX);
 
 				// Displacement
-				float forwardPointXDisp = ampl_lowFreq * dnx1 + ampl_mediumFreq * dnx2;
 				vec3 forwardPointXDispPos = forwardPointX + forwardPointXDisp * normal;
 
 				// Y-axis
 				// Noise value at sample point
-				float dny1 = snoise(texScale * forwardPointY * stretchVector_lowFreq * freq_low + timeVector * 0.5);
-				float dny2 = snoise(texScale * forwardPointY * stretchVector_medFreq * freq_mid + timeVector);
+				float forwardPointYDisp = vertexDisplacement(forwardPointY);
 
 				// Displacement
-				float forwardPointYDisp = ampl_lowFreq * dny1 + ampl_mediumFreq * dny2;
 				vec3 forwardPointYDispPos = forwardPointY + forwardPointYDisp * normal;
 
 				// Difference vectors
@@ -252,11 +259,12 @@
 				// Transformation of 'varyings'
 				interpolatedNormalWorldSpace = normalize(mat3(modelMatrix) * newNormal);
 				interpolatedNormalViewSpace = normalize(mat3(modelViewMatrix) * newNormal);
+				
 				lightDirectionViewSpace = normalize(mat3(viewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
 				lightPositionWorldSpace = vec4(sunPositionX, sunPositionY, sunPositionZ, 1.0);
-				fragWorldPos = vec4(displacedPosition, 1.0) * modelMatrix;
+				fragWorldPos = vec4(position, 1.0) * modelMatrix; //vec4(displacedPosition, 1.0) * modelMatrix;
 
-				test = vec3(n2) * 1.0;
+				//test = vec3(n1) * 1.0;
 			}
 			
 		</script>
@@ -421,12 +429,14 @@
 			uniform float sunPositionZ;
 			uniform float seaDepth;
 			uniform float skyHue;
+			uniform float waterHue;
 			uniform float reflectivity;
 			uniform float refractivity;
 			uniform float reflectionLength;
 			uniform float skyHeight;
 			uniform float planeWidth;
 			uniform float planeHeight;
+			uniform float amplGain;
 			uniform vec3 cameraPosWorldSpace;
 			uniform sampler2D skyTexture;
 			uniform sampler2D seabedTexture;
@@ -438,10 +448,62 @@
 			varying vec4 fragWorldPos;
 			varying vec4 lightPositionWorldSpace;
 
+			uniform samplerCube cubemap;
+
 			varying vec3 test;
+
+			float fragmentDisplacement(vec3 worldPos)
+			{
+				vec3 timeVector = 0.3 * vec3(0.0, time, time);
+				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
+				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
+
+				float texScale = 0.0005;
+
+				// Three frequencies of noise
+				float freq_low = 7.0 / amplGain;
+				float freq_mid = 67.0;
+
+				// Perlin noise function calls, returning [-1, 1]
+				float n1 = snoise(texScale * worldPos * stretchVector_lowFreq * freq_low + timeVector * 0.5);
+				float n2 = snoise(texScale * worldPos * stretchVector_medFreq * freq_mid + timeVector);
+
+				n1 += 1.0;
+				n2 += 1.0;
+
+				// Displacement
+				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
+				float ampl_mediumFreq = 2.25;
+
+				return ampl_lowFreq * n1 + ampl_mediumFreq * n2;
+			}
 	
 			void main()
 			{
+				/* Approximating new normals (per fragment) */
+				/*
+				// Step length
+				float h = 0.0001;
+
+				// Forward difference points
+				vec3 fPoint_x = fragWorldPos.xyz + vec3(h, 0.0, 0.0);
+				vec3 fPoint_y = fragWorldPos.xyz + vec3(0.0, h, 0.0);
+
+				// Noise displacement
+				float displacement_fPoint_x = fragmentDisplacement(fPoint_x);
+				float displacement_fPoint_y = fragmentDisplacement(fPoint_y);
+
+				// Displaced positions
+				vec3 displaced_fPoint_x = fPoint_x + interpolatedNormalWorldSpace * displacement_fPoint_x;
+				vec3 displaced_fPoint_y = fPoint_y + interpolatedNormalWorldSpace * displacement_fPoint_y;
+
+				// Difference vectors
+				vec3 diffVec_x = normalize(fragWorldPos.xyz - displaced_fPoint_x) / h;
+				vec3 diffVec_y = normalize(fragWorldPos.xyz - displaced_fPoint_y) / h;
+
+				// New normal
+				vec3 newNormal_ws = normalize(cross(diffVec_x, diffVec_y));
+				*/
 				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
 				vec3 specularColor = vec3(1.0, 1.0, 1.0);
 				vec3 viewDirectionWorldSpace = -normalize(cameraPosWorldSpace - fragWorldPos.xyz);
@@ -452,15 +514,15 @@
 				// Diffuse lighting, sky (world space)
 				// ===================================
 
-				float diffuseLighting = max(0.0, dot(vec3(0.0, 0.0, 1.0), interpolatedNormalWorldSpace));
-				diffuseLighting = pow(diffuseLighting, 10.0);
+				//float diffuseLighting = max(0.0, dot(vec3(0.0, 0.0, 1.0), newNormal_ws));
+				//diffuseLighting = pow(diffuseLighting, 10.0);
 
 				// Specular lighting, sun (world space)
 				// ====================================
 
 				// Compute reflection direction vector (Blinn-Phong)
-				vec3 reflectionWorldSpace = 2.0 * interpolatedNormalWorldSpace * dot(interpolatedNormalWorldSpace, lightDirectionWorldSpace) - (lightDirectionWorldSpace);
-				float specularLighting = pow(max(0.0, dot(reflectionWorldSpace, viewDirectionWorldSpace)), specularPower);
+				// vec3 reflectionWorldSpace = 2.0 * newNormal_ws * dot(newNormal_ws, lightDirectionWorldSpace) - (lightDirectionWorldSpace);
+				// float specularLighting = pow(max(0.0, dot(reflectionWorldSpace, lightDirectionWorldSpace)), specularPower);
 
 				// Reflection (sky)
 				// ================
@@ -477,10 +539,9 @@
 				vec3 texCoord3D = vec3(px, py, 0.0) + reflectionDirWorldSpace * step;
 
 				// Sample 3D noise function at these coordinates
-				float hue = skyHue;
 				float saturation = 0.55;
-				float lightness = (snoise(texCoord3D) + 1.0) / 2.0;
-				vec4 reflectionColor = vec4( hsl2rgb(hue, saturation, lightness), 1.0 );
+				float lightness = (snoise(texCoord3D) + 2.0) / 3.0;
+				vec4 reflectionColor = textureCube(cubemap, reflectionDirWorldSpace); //vec4( hsl2rgb(skyHue, saturation, lightness), 1.0 );
 
 				// Refraction (seabed)
 				// ===================
@@ -497,7 +558,7 @@
 				float offset_y = tan(alpha) * seaDepth * refractionDirWorldSpace.y;
 
 				// Compute distance traveled (hypothenuse)
-				float refractionDist = cos_alpha / seaDepth;
+				float refractionDist = seaDepth / cos_alpha;
 
 				// Compute new sampling position (uv coordinates)
 				float samplePos_x = px + offset_x;
@@ -509,14 +570,18 @@
 
 				// Create 2D uv coordinates
 				vec2 texCoord2D_seabed = vec2(samplePos_x, samplePos_y);
+				
 				// Sample seabed texture at these coordinates
-				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed) * refractionDist;
+				float refractionAttenuation = pow(refractionDist, 5.0);
+				vec4 waterColor = vec4( hsl2rgb(waterHue, 1.0, 0.05), 1.0 );
+
+				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed) * (1.0 / refractionAttenuation);
+				refractionColor += waterColor * (1.0 - 1.0 / refractionAttenuation);
 
 				// Diffuse sky reflection
 				float blubb = pow(dot(vec3(0.0, 0.0, 1.0), interpolatedNormalWorldSpace), 8.0);
 
-				refractionColor += vec4(0.02, 0.08, 0.2, 1.0);
-				refractionColor *= blubb;
+				//refractionColor *= blubb;
 
 				// Composite diffuse (sky), specular (sun) and reflection (sky texture)
 				// ====================================================================
@@ -527,7 +592,8 @@
 				float k_refr = refractivity; //(0.25 + 0.5 * cos_alpha);
 				float k_refl = reflectivity; //(0.25 + 0.5 * (1.0 - cos_alpha));
 				float k_phong = 0.0;
-				gl_FragColor = k_refr * refractionColor + k_refl * reflectionColor + k_phong * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
+				gl_FragColor = k_refr * refractionColor + k_refl * reflectionColor;// + k_phong * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
+
 			}
 		
 		</script>
@@ -559,7 +625,8 @@
 			var plane_width  = 1200;
 			var plane_height = 1200;
 			var sea_depth = 1.0;
-			var sky_hue = 169.0 / 360.0;
+			var sky_hue = 185.0 / 360.0;
+			var water_hue = 185.0 / 360.0;
 			var _reflectivity = 1.0;
 			var _refractivity = 1.0;
 			var _reflectionLength = 1.0;
@@ -600,7 +667,7 @@
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// World
-				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 32, 32);
+				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
 
 				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg" );
 				sky_tex.minFilter = THREE.LinearFilter;
@@ -618,6 +685,7 @@
 				    planeHeight: { type: "f", value: plane_height},
 				    seaDepth: { type: "f", value: sea_depth},
 				    skyHue: { type: "f", value: sky_hue},
+				    waterHue: { type: "f", value: water_hue},
 				    skyHeight: { type: "f", value: sky_height},
 				    reflectivity: { type: "f", value: _reflectivity},
 				    refractivity: { type: "f", value: _refractivity},
@@ -627,6 +695,9 @@
 				    // Textures
 					skyTexture : { type: "t", value: sky_tex},
 					seabedTexture : { type: "t", value: seabed_tex },
+					cubemap : { type: "t", value: THREE.ImageUtils.loadTextureCube( [ "img/px.jpg", "img/nx.jpg",
+                                                                     					  "img/py.jpg", "img/ny.jpg", 
+                                                                     					  "img/pz.jpg", "img/nz.jpg" ] ) },
 				};
 
 				// create the custom material
@@ -704,6 +775,7 @@
 				uniforms.cameraPosWorldSpace.value = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z);
 				uniforms.seaDepth.value = gui_content.depth;
 				uniforms.skyHue.value = gui_content.skyHue;
+				uniforms.waterHue.value = gui_content.waterHue;
 				uniforms.reflectivity.value = gui_content.reflectivity;
 				uniforms.refractivity.value = gui_content.refractivity;
 				uniforms.reflectionLength.value = gui_content.reflectionLength;
