@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 	<head>
@@ -41,6 +40,7 @@
 			this.reflectivity = 0.5;
 			this.refractivity = 0.5;
 			this.reflectionLength = 1.0;
+			this.displacementScale = 1.0;
 			//this.explode = function() {};
 		};
 
@@ -49,12 +49,13 @@
 		window.onload = function() {
 			gui_content = new GuiContent();
 			var gui = new dat.GUI();
-			gui.add(gui_content, 'depth', 1, 10);
+			gui.add(gui_content, 'depth', 1, 20);
 			gui.add(gui_content, 'skyHue', 0, 1);
 			gui.add(gui_content, 'waterHue', 0, 1);
 			gui.add(gui_content, 'reflectivity', 0, 1);
 			gui.add(gui_content, 'refractivity', 0, 1);
 			gui.add(gui_content, 'reflectionLength', 0, 2);
+			gui.add(gui_content, 'displacementScale', 0, 1);
 			//gui.add(gui_content, 'explode');
 		};
 		</script>
@@ -66,41 +67,32 @@
 
 		<!-- Shaders -->
 		<script type="x-shader/x-vertex" id="vertexshader">
-
 			/* HERE COMES THE NOISE */
-
 			vec3 mod289(vec3 x) {
 				return x - floor(x * (1.0 / 289.0)) * 289.0;
 			}
-
 			vec4 mod289(vec4 x) {
 				return x - floor(x * (1.0 / 289.0)) * 289.0;
 			}
-
 			vec4 permute(vec4 x) {
 				return mod289(((x*34.0)+1.0)*x);
 			}
-
 			vec4 taylorInvSqrt(vec4 r)
 			{
 				return 1.79284291400159 - 0.85373472095314 * r;
 			}
-
 			float snoise(vec3 v)
 			{ 
 				const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
 				const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
-
 				// First corner
 				vec3 i  = floor(v + dot(v, C.yyy) );
 				vec3 x0 =   v - i + dot(i, C.xxx) ;
-
 				// Other corners
 				vec3 g = step(x0.yzx, x0.xyz);
 				vec3 l = 1.0 - g;
 				vec3 i1 = min( g.xyz, l.zxy );
 				vec3 i2 = max( g.xyz, l.zxy );
-
 				//   x0 = x0 - 0.0 + 0.0 * C.xxx;
 				//   x1 = x0 - i1  + 1.0 * C.xxx;
 				//   x2 = x0 - i2  + 2.0 * C.xxx;
@@ -108,61 +100,48 @@
 				vec3 x1 = x0 - i1 + C.xxx;
 				vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
 				vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
-
 				// Permutations
 				i = mod289(i); 
 				vec4 p = permute( permute( permute( 
 				         i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
 				       + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
 				       + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
-
 				// Gradients: 7x7 points over a square, mapped onto an octahedron.
 				// The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
 				float n_ = 0.142857142857; // 1.0/7.0
 				vec3  ns = n_ * D.wyz - D.xzx;
-
 				vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
-
 				vec4 x_ = floor(j * ns.z);
 				vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
-
 				vec4 x = x_ *ns.x + ns.yyyy;
 				vec4 y = y_ *ns.x + ns.yyyy;
 				vec4 h = 1.0 - abs(x) - abs(y);
-
 				vec4 b0 = vec4( x.xy, y.xy );
 				vec4 b1 = vec4( x.zw, y.zw );
-
 				//vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;
 				//vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;
 				vec4 s0 = floor(b0)*2.0 + 1.0;
 				vec4 s1 = floor(b1)*2.0 + 1.0;
 				vec4 sh = -step(h, vec4(0.0));
-
 				vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
 				vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
-
 				vec3 p0 = vec3(a0.xy,h.x);
 				vec3 p1 = vec3(a0.zw,h.y);
 				vec3 p2 = vec3(a1.xy,h.z);
 				vec3 p3 = vec3(a1.zw,h.w);
-
 				//Normalise gradients
 				vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
 				p0 *= norm.x;
 				p1 *= norm.y;
 				p2 *= norm.z;
 				p3 *= norm.w;
-
 				// Mix final noise value
 				vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
 				m = m * m;
 				return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
 				                            dot(p2,x2), dot(p3,x3) ) );
 			}
-
 			/* HERE ENDS THE NOISE */
-
 			// switch on high precision floats
 			#ifdef GL_ES
 			precision highp float;
@@ -182,88 +161,87 @@
 			uniform float reflectionLength;
 			uniform float skyHeight;
 			uniform float amplGain;
+			uniform float displacementScale;
+			
 			uniform vec3 cameraPosWorldSpace;
-
-			varying vec3 interpolatedNormalViewSpace;
+			
+			// varying vec3 interpolatedNormalViewSpace;
 			varying vec3 interpolatedNormalWorldSpace;
 			varying vec3 lightDirectionViewSpace;
 			varying vec4 fragWorldPos;
 			varying vec4 lightPositionWorldSpace;
-
 			varying vec3 test;
-
+			
 			vec3 randVector;
-
+			
 			float vertexDisplacement(vec3 pos)
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time);
 				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
 				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
-
 				float texScale = 0.0005;
-
+				
 				// Three frequencies of noise
 				float freq_low = 7.0 / amplGain;
 				float freq_mid = 67.0;
-
+				
 				// Perlin noise function calls, returning [-1, 1]
 				float n1 = snoise(texScale * pos * stretchVector_lowFreq * freq_low + timeVector * 0.5);
 				float n2 = snoise(texScale * pos * stretchVector_medFreq * freq_mid + timeVector);
-
 				n1 += 1.0;
 				n2 += 1.0;
-
+				
 				// Displacement
 				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
 				float ampl_mediumFreq = 0.25;
-
-				return ampl_lowFreq * n1 + ampl_mediumFreq * n2;
+				
+				return displacementScale * (ampl_lowFreq * n1 + ampl_mediumFreq * n2);
 			}
-
+			
 			void main()
 			{
 				float displacement = vertexDisplacement(position.xyz);
-
+				
 				// New, displaced position
 				vec3 displacedPosition = position.xyz + displacement * normal;
 				gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
-
-				/* --- Approximating new normals --- */
+				
+				/* ==== Approximating new normals ==== */
+				/* =================================== */
 							
 				// Forward difference sample points
 				float h = 0.01;
 				vec3 forwardPointX = vec3(position.x + h, position.y, position.z);
 				vec3 forwardPointY = vec3(position.x, position.y + h, position.z);
-
+				
 				// X-axis
 				// Noise value at sample point
 				float forwardPointXDisp = vertexDisplacement(forwardPointX);
-
+				
 				// Displacement
 				vec3 forwardPointXDispPos = forwardPointX + forwardPointXDisp * normal;
-
+				
 				// Y-axis
 				// Noise value at sample point
 				float forwardPointYDisp = vertexDisplacement(forwardPointY);
-
+				
 				// Displacement
 				vec3 forwardPointYDispPos = forwardPointY + forwardPointYDisp * normal;
-
+				
 				// Difference vectors
 				vec3 diffVectorX = normalize(displacedPosition - forwardPointXDispPos);
 				vec3 diffVectorY = normalize(displacedPosition - forwardPointYDispPos);
-
+				
 				// New normal
 				vec3 newNormal = normalize(cross(diffVectorX, diffVectorY));
-
+				
 				// Transformation of 'varyings'
 				interpolatedNormalWorldSpace = normalize(mat3(modelMatrix) * newNormal);
-				interpolatedNormalViewSpace = normalize(mat3(modelViewMatrix) * newNormal);
+				// interpolatedNormalViewSpace = normalize(mat3(modelViewMatrix) * newNormal);
 				
 				lightDirectionViewSpace = normalize(mat3(viewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
 				lightPositionWorldSpace = vec4(sunPositionX, sunPositionY, sunPositionZ, 1.0);
-				fragWorldPos = vec4(position, 1.0) * modelMatrix; //vec4(displacedPosition, 1.0) * modelMatrix;
-
+				fragWorldPos = vec4(displacedPosition, 1.0) * modelMatrix;
 				//test = vec3(n1) * 1.0;
 			}
 			
@@ -274,41 +252,32 @@
 			#ifdef GL_ES
 			precision highp float;
 			#endif
-
 			/* HERE COMES THE NOISE */
-
 			vec3 mod289(vec3 x) {
 				return x - floor(x * (1.0 / 289.0)) * 289.0;
 			}
-
 			vec4 mod289(vec4 x) {
 				return x - floor(x * (1.0 / 289.0)) * 289.0;
 			}
-
 			vec4 permute(vec4 x) {
 				return mod289(((x*34.0)+1.0)*x);
 			}
-
 			vec4 taylorInvSqrt(vec4 r)
 			{
 				return 1.79284291400159 - 0.85373472095314 * r;
 			}
-
 			float snoise(vec3 v)
 			{ 
 				const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
 				const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
-
 				// First corner
 				vec3 i  = floor(v + dot(v, C.yyy) );
 				vec3 x0 =   v - i + dot(i, C.xxx) ;
-
 				// Other corners
 				vec3 g = step(x0.yzx, x0.xyz);
 				vec3 l = 1.0 - g;
 				vec3 i1 = min( g.xyz, l.zxy );
 				vec3 i2 = max( g.xyz, l.zxy );
-
 				//   x0 = x0 - 0.0 + 0.0 * C.xxx;
 				//   x1 = x0 - i1  + 1.0 * C.xxx;
 				//   x2 = x0 - i2  + 2.0 * C.xxx;
@@ -316,64 +285,52 @@
 				vec3 x1 = x0 - i1 + C.xxx;
 				vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
 				vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
-
 				// Permutations
 				i = mod289(i); 
 				vec4 p = permute( permute( permute( 
 				         i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
 				       + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
 				       + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
-
 				// Gradients: 7x7 points over a square, mapped onto an octahedron.
 				// The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
 				float n_ = 0.142857142857; // 1.0/7.0
 				vec3  ns = n_ * D.wyz - D.xzx;
-
 				vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
-
 				vec4 x_ = floor(j * ns.z);
 				vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
-
 				vec4 x = x_ *ns.x + ns.yyyy;
 				vec4 y = y_ *ns.x + ns.yyyy;
 				vec4 h = 1.0 - abs(x) - abs(y);
-
 				vec4 b0 = vec4( x.xy, y.xy );
 				vec4 b1 = vec4( x.zw, y.zw );
-
 				//vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;
 				//vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;
 				vec4 s0 = floor(b0)*2.0 + 1.0;
 				vec4 s1 = floor(b1)*2.0 + 1.0;
 				vec4 sh = -step(h, vec4(0.0));
-
 				vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
 				vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
-
 				vec3 p0 = vec3(a0.xy,h.x);
 				vec3 p1 = vec3(a0.zw,h.y);
 				vec3 p2 = vec3(a1.xy,h.z);
 				vec3 p3 = vec3(a1.zw,h.w);
-
 				//Normalise gradients
 				vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
 				p0 *= norm.x;
 				p1 *= norm.y;
 				p2 *= norm.z;
 				p3 *= norm.w;
-
 				// Mix final noise value
 				vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
 				m = m * m;
 				return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
 				                            dot(p2,x2), dot(p3,x3) ) );
 			}
-
+			
 			/* HERE ENDS THE NOISE */
-
 			/* === hsl2rgb, https://github.com/Jam3/glsl-hsl2rgb/blob/master/index.glsl === */
 			/* ============================================================================ */
-
+			
 			float hue2rgb(float f1, float f2, float hue)
 			{
 			    if (hue < 0.0)
@@ -391,7 +348,7 @@
 			        res = f1;
 			    return res;
 			}
-
+			
 			vec3 hsl2rgb(vec3 hsl)
 			{
 			    vec3 rgb;
@@ -414,15 +371,15 @@
 			    }   
 			    return rgb;
 			}
-
+			
 			vec3 hsl2rgb(float h, float s, float l)
 			{
 			    return hsl2rgb(vec3(h, s, l));
 			}
-
+			
 			/* ================================= !hsl2rgb ================================= */
 			/* ============================================================================ */
-
+			
 			uniform float time;
 			uniform float sunPositionX;
 			uniform float sunPositionY;
@@ -437,45 +394,40 @@
 			uniform float planeWidth;
 			uniform float planeHeight;
 			uniform float amplGain;
+			uniform float displacementScale;
+			
 			uniform vec3 cameraPosWorldSpace;
+			
 			uniform sampler2D skyTexture;
 			uniform sampler2D seabedTexture;
-
+			uniform samplerCube cubemap;
+			
 			varying vec3 vTexCoord3D;
-			varying vec3 interpolatedNormalViewSpace;
+			// varying vec3 interpolatedNormalViewSpace;
 			varying vec3 interpolatedNormalWorldSpace;
 			varying vec3 lightDirectionViewSpace;
 			varying vec4 fragWorldPos;
 			varying vec4 lightPositionWorldSpace;
-
-			uniform samplerCube cubemap;
-
 			varying vec3 test;
-
+			
 			float fragmentDisplacement(vec3 worldPos)
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time);
 				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
 				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
-
 				float texScale = 0.0005;
-
 				// Three frequencies of noise
 				float freq_low = 7.0 / amplGain;
 				float freq_mid = 67.0;
-
 				// Perlin noise function calls, returning [-1, 1]
 				float n1 = snoise(texScale * worldPos * stretchVector_lowFreq * freq_low + timeVector * 0.5);
 				float n2 = snoise(texScale * worldPos * stretchVector_medFreq * freq_mid + timeVector);
-
 				n1 += 1.0;
 				n2 += 1.0;
-
 				// Displacement
 				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
 				float ampl_mediumFreq = 2.25;
-
-				return ampl_lowFreq * n1 + ampl_mediumFreq * n2;
+				return displacementScale * (ampl_lowFreq * n1 + ampl_mediumFreq * n2);
 			}
 	
 			void main()
@@ -484,116 +436,112 @@
 				/*
 				// Step length
 				float h = 0.0001;
-
 				// Forward difference points
 				vec3 fPoint_x = fragWorldPos.xyz + vec3(h, 0.0, 0.0);
 				vec3 fPoint_y = fragWorldPos.xyz + vec3(0.0, h, 0.0);
-
 				// Noise displacement
 				float displacement_fPoint_x = fragmentDisplacement(fPoint_x);
 				float displacement_fPoint_y = fragmentDisplacement(fPoint_y);
-
 				// Displaced positions
 				vec3 displaced_fPoint_x = fPoint_x + interpolatedNormalWorldSpace * displacement_fPoint_x;
 				vec3 displaced_fPoint_y = fPoint_y + interpolatedNormalWorldSpace * displacement_fPoint_y;
-
 				// Difference vectors
 				vec3 diffVec_x = normalize(fragWorldPos.xyz - displaced_fPoint_x) / h;
 				vec3 diffVec_y = normalize(fragWorldPos.xyz - displaced_fPoint_y) / h;
-
 				// New normal
 				vec3 newNormal_ws = normalize(cross(diffVec_x, diffVec_y));
 				*/
+				
 				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
 				vec3 specularColor = vec3(1.0, 1.0, 1.0);
 				vec3 viewDirectionWorldSpace = -normalize(cameraPosWorldSpace - fragWorldPos.xyz);
 				vec3 lightDirectionWorldSpace = normalize(fragWorldPos.xyz - lightPositionWorldSpace.xyz);
-
 				float specularPower = 256.0;
-
+				
 				// Diffuse lighting, sky (world space)
 				// ===================================
-
+				
 				//float diffuseLighting = max(0.0, dot(vec3(0.0, 0.0, 1.0), newNormal_ws));
 				//diffuseLighting = pow(diffuseLighting, 10.0);
-
+				
 				// Specular lighting, sun (world space)
 				// ====================================
-
+				
 				// Compute reflection direction vector (Blinn-Phong)
 				// vec3 reflectionWorldSpace = 2.0 * newNormal_ws * dot(newNormal_ws, lightDirectionWorldSpace) - (lightDirectionWorldSpace);
 				// float specularLighting = pow(max(0.0, dot(reflectionWorldSpace, lightDirectionWorldSpace)), specularPower);
-
+				
 				// Reflection (sky)
 				// ================
-
+				
 				// Compute reflection direction vector (Blinn-Phong)
 				vec3 reflectionDirWorldSpace = normalize(2.0 * interpolatedNormalWorldSpace * dot(interpolatedNormalWorldSpace, viewDirectionWorldSpace) - (viewDirectionWorldSpace));
-
+				
 				// Get normalized object coordinates
 				float px = fragWorldPos.x / planeWidth + 0.5;
 				float py = fragWorldPos.y / planeHeight + 0.5;
-
+				
 				// Compute 3D noise sampling position
 				float step = reflectionLength;
 				vec3 texCoord3D = vec3(px, py, 0.0) + reflectionDirWorldSpace * step;
-
+				
 				// Sample 3D noise function at these coordinates
 				float saturation = 0.55;
 				float lightness = (snoise(texCoord3D) + 2.0) / 3.0;
 				vec4 reflectionColor = textureCube(cubemap, reflectionDirWorldSpace); //vec4( hsl2rgb(skyHue, saturation, lightness), 1.0 );
-
+				
 				// Refraction (seabed)
 				// ===================
-
+				
 				// Compute refraction direction vector
 				vec3 refractionDirWorldSpace = refract(viewDirectionWorldSpace, interpolatedNormalWorldSpace, 0.75);
 
+				// Glossy reflection
+				float diversionFreq = 10.0;
+				float reflectionDiversion = snoise(fragWorldPos.xyz * diversionFreq) / 10.0;
+
+				
 				// Compute angle between refraction and 'down' vector
 				float cos_alpha = dot(vec3(0.0, 0.0, -1.0), refractionDirWorldSpace);
 				float alpha = acos(cos_alpha);
-
+				
 				// Compute sampling offset
 				float offset_x = tan(alpha) * seaDepth * refractionDirWorldSpace.x;
 				float offset_y = tan(alpha) * seaDepth * refractionDirWorldSpace.y;
-
+				
 				// Compute distance traveled (hypothenuse)
 				float refractionDist = seaDepth / cos_alpha;
-
+				
 				// Compute new sampling position (uv coordinates)
 				float samplePos_x = px + offset_x;
 				float samplePos_y = py + offset_y;
-
+				
 				// Texture tiling/repeating
 				samplePos_x = (samplePos_x < 0.0) ? mod(samplePos_x + 1.0, 1.0) : mod(samplePos_x, 1.0);
 				samplePos_y = (samplePos_y < 0.0) ? mod(samplePos_y + 1.0, 1.0) : mod(samplePos_y, 1.0);
-
+				
 				// Create 2D uv coordinates
 				vec2 texCoord2D_seabed = vec2(samplePos_x, samplePos_y);
 				
 				// Sample seabed texture at these coordinates
-				float refractionAttenuation = pow(refractionDist, 5.0);
+				float refractionAttenuation = pow(refractionDist, 2.0);
 				vec4 waterColor = vec4( hsl2rgb(waterHue, 1.0, 0.05), 1.0 );
-
 				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed) * (1.0 / refractionAttenuation);
 				refractionColor += waterColor * (1.0 - 1.0 / refractionAttenuation);
-
+				
 				// Diffuse sky reflection
 				float blubb = pow(dot(vec3(0.0, 0.0, 1.0), interpolatedNormalWorldSpace), 8.0);
-
 				//refractionColor *= blubb;
-
+				
 				// Composite diffuse (sky), specular (sun) and reflection (sky texture)
 				// ====================================================================
-
+				
 				// Compute angle between view direction and surface normal
 				cos_alpha = abs(dot(viewDirectionWorldSpace, interpolatedNormalWorldSpace));
-
 				float k_refr = refractivity; //(0.25 + 0.5 * cos_alpha);
 				float k_refl = reflectivity; //(0.25 + 0.5 * (1.0 - cos_alpha));
 				float k_phong = 0.0;
 				gl_FragColor = k_refr * refractionColor + k_refl * reflectionColor;// + k_phong * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
-
 			}
 		
 		</script>
@@ -630,6 +578,7 @@
 			var _reflectivity = 1.0;
 			var _refractivity = 1.0;
 			var _reflectionLength = 1.0;
+			var _displacementScale = 1.0;
 			var sky_height = 1.0;
 			var ampl_gain = 1.0;
 			var sky_tex;
@@ -647,10 +596,11 @@
 
 			init();
 
-			function animate() {
-				//console.log("Animating!");
+			function animate()
+			{
 				requestAnimationFrame(animate);
 				controls.update();
+
 				render();
 			}
 
@@ -659,21 +609,24 @@
 				start = Date.now();
 
 				// Camera
-				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 2000 );
-				camera.position.z = 500;
+				camera = new THREE.PerspectiveCamera( 65, window.innerWidth / window.innerHeight, 1, 100000 );
+				camera.position.set(0, 0, 2000);
 
 				// Scene
 				scene = new THREE.Scene();
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
-				// World
+				// Water surface plane
 				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
 
-				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg" );
+				// Textures
+				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg " );
 				sky_tex.minFilter = THREE.LinearFilter;
-
 				var seabed_tex = THREE.ImageUtils.loadTexture( "img/tex_seabed_01.png" );
 				seabed_tex.minFilter = THREE.LinearFilter;
+				var sky_cubemap = THREE.ImageUtils.loadTextureCube( [ "img/cm_right.jpg", "img/cm_left.jpg",
+                                                                     				  "img/cm_bottom.jpg", "img/cm_top.jpg", 
+                                                                     				  "img/cm_back.jpg", "img/cm_front.jpg" ] )
 
 				// Shader uniforms
 				uniforms = {
@@ -690,14 +643,13 @@
 				    reflectivity: { type: "f", value: _reflectivity},
 				    refractivity: { type: "f", value: _refractivity},
 				    reflectionLength: { type: "f", value: _reflectionLength},
+				    displacementScale: { type: "f", value: _displacementScale},
 				    amplGain: { type: "f", value: ampl_gain},
 				    cameraPosWorldSpace: { type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
 				    // Textures
 					skyTexture : { type: "t", value: sky_tex},
 					seabedTexture : { type: "t", value: seabed_tex },
-					cubemap : { type: "t", value: THREE.ImageUtils.loadTextureCube( [ "img/px.jpg", "img/nx.jpg",
-                                                                     					  "img/py.jpg", "img/ny.jpg", 
-                                                                     					  "img/pz.jpg", "img/nz.jpg" ] ) },
+					cubemap : { type: "t", value: sky_cubemap },
 				};
 
 				// create the custom material
@@ -705,14 +657,14 @@
 					uniforms: uniforms,
 					vertexShader:   $('#vertexshader').text(),
 					fragmentShader: $('#fragmentshader').text(),
-					wireframe: false,
+					wireframe: false
 				});
 
 				var waterSurface = new THREE.Mesh( geometry, shaderMaterial );
-				waterSurface.position.x = 0;
-				waterSurface.position.y = 0;
-				waterSurface.position.z = 0;
-				//waterSurface.rotation.x = 2.0;
+				waterSurface.position.x = 0.0;
+				waterSurface.position.y = 0.0;
+				waterSurface.position.z = -200.0;
+				//waterSurface.rotation.x = -3.14 / 2.0;
 				waterSurface.updateMatrix();
 				waterSurface.matrixAutoUpdate = false;
 				scene.add( waterSurface );
@@ -739,13 +691,13 @@
 				// Controls
 				controls = new THREE.TrackballControls( camera, renderer.domElement );
 				controls.rotateSpeed = 2.0;
-				controls.zoomSpeed = 1.2;
-				controls.panSpeed = 0.8;
-				controls.noZoom = false;
-				controls.noPan = false;
-				controls.staticMoving = true;
-				controls.dynamicDampingFactor = 0.3;
-				controls.keys = [ 65, 83, 68 ];
+				// controls.zoomSpeed = 1.2;
+				// controls.panSpeed = 0.8;
+				// controls.noZoom = false;
+				// controls.noPan = false;
+				// controls.staticMoving = true;
+				// controls.dynamicDampingFactor = 0.3;
+				// controls.keys = [ 65, 83, 68 ];
 
 				stats = new Stats();
 				stats.domElement.style.position = 'absolute';
@@ -779,6 +731,7 @@
 				uniforms.reflectivity.value = gui_content.reflectivity;
 				uniforms.refractivity.value = gui_content.refractivity;
 				uniforms.reflectionLength.value = gui_content.reflectionLength;
+				uniforms.displacementScale.value = gui_content.displacementScale;
 				uniforms.amplGain.value = 0.9 + 0.1 * gui_content.depth;
 				
 				renderer.render( scene, camera );
