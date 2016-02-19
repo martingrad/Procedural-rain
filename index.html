@@ -41,6 +41,7 @@
 			this.refractivity = 0.5;
 			this.cubemapEnabled = true;
 			this.displacementScale = 1.0;
+			this.octaves = 3;
 			//this.explode = function() {};
 		};
 
@@ -56,6 +57,7 @@
 			gui.add(gui_content, 'refractivity', 0, 1);
 			gui.add(gui_content, 'cubemapEnabled');
 			gui.add(gui_content, 'displacementScale', 0, 1);
+			gui.add(gui_content, 'octaves', 0, 10);
 			//gui.add(gui_content, 'explode');
 		};
 		</script>
@@ -163,6 +165,18 @@
 			uniform float amplGain;
 			uniform float displacementScale;
 			
+			uniform float noiseFreq1;
+			uniform float noiseFreq2;
+			uniform float noiseFreq3;
+			uniform float ampl_freq1;
+			uniform float ampl_freq2;
+			uniform float ampl_freq3;
+			uniform int octaves;
+
+			uniform vec3 stretchVector1;
+			uniform vec3 stretchVector2;
+			uniform vec3 stretchVector3;
+
 			uniform vec3 cameraPosWorldSpace;
 			
 			// varying vec3 interpolatedNormalViewSpace;
@@ -174,28 +188,29 @@
 			
 			vec3 randVector;
 			
-			float vertexDisplacement(vec3 pos)
+			float vertexDisplacement(vec3 worldPos)
 			{
-				vec3 timeVector = 0.3 * vec3(0.0, time, time);
-				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
-				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
+				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale = 0.0005;
 				
-				// Three frequencies of noise
-				float freq_low = 7.0 / amplGain;
-				float freq_mid = 67.0;
 				
-				// Perlin noise function calls, returning [-1, 1]
-				float n1 = snoise(texScale * pos * stretchVector_lowFreq * freq_low + timeVector * 0.5);
-				float n2 = snoise(texScale * pos * stretchVector_medFreq * freq_mid + timeVector);
-				n1 += 1.0;
-				n2 += 1.0;
-				
-				// Displacement
-				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
-				float ampl_mediumFreq = 0.25;
-				
-				return displacementScale * (ampl_lowFreq * n1 + ampl_mediumFreq * n2);
+				float displacement = 0.0;
+				float noiseFreq = 4.0;
+				float amplitude = 10.0 * (1.5 * amplGain);
+				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
+
+				for(int i = 0; i < 5; ++i)
+				{
+					if(i >= octaves) break;
+	
+					// Perlin noise function calls, adding bias to return [0, 2]
+					displacement += amplitude * snoise(texScale * worldPos * stretchVector * noiseFreq + timeVector) + 1.0;
+					noiseFreq *= 3.0;
+					amplitude *= 0.4;
+					stretchVector += (0.125, 0.0, 0.0);
+				}
+
+				return displacementScale * displacement;
 			}
 			
 			void main()
@@ -395,9 +410,21 @@
 			uniform float planeHeight;
 			uniform float amplGain;
 			uniform float displacementScale;
+			
+			uniform float noiseFreq1;
+			uniform float noiseFreq2;
+			uniform float noiseFreq3;
+			uniform float ampl_freq1;
+			uniform float ampl_freq2;
+			uniform float ampl_freq3;
+			uniform int octaves;
 
 			uniform int cubemapEnabled;
 			
+			uniform vec3 stretchVector1;
+			uniform vec3 stretchVector2;
+			uniform vec3 stretchVector3;
+
 			uniform vec3 cameraPosWorldSpace;
 			
 			uniform sampler2D skyTexture;
@@ -414,46 +441,31 @@
 			
 			float fragmentDisplacement(vec3 worldPos)
 			{
-				vec3 timeVector = 0.3 * vec3(0.0, time, time);
-				vec3 stretchVector_lowFreq = vec3(0.35, 1.0, 1.0);
-				vec3 stretchVector_medFreq = vec3(0.5, 1.0, 1.0);
+				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale = 0.0005;
-				// Three frequencies of noise
-				float freq_low = 7.0 / amplGain;
-				float freq_mid = 67.0;
-				// Perlin noise function calls, returning [-1, 1]
-				float n1 = snoise(texScale * worldPos * stretchVector_lowFreq * freq_low + timeVector * 0.5);
-				float n2 = snoise(texScale * worldPos * stretchVector_medFreq * freq_mid + timeVector);
-				n1 += 1.0;
-				n2 += 1.0;
-				// Displacement
-				float ampl_lowFreq = 10.0 * (1.5 * amplGain);
-				float ampl_mediumFreq = 2.25;
-				return displacementScale * (ampl_lowFreq * n1 + ampl_mediumFreq * n2);
+				
+				
+				float displacement = 0.0;
+				float noiseFreq = 4.0;
+				float amplitude = 10.0 * (1.5 * amplGain);
+				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
+
+				for(int i = 0; i < 5; ++i)
+				{
+					if(i >= octaves) break;
+	
+					// Perlin noise function calls, adding bias to return [0, 2]
+					displacement += amplitude * snoise(texScale * worldPos * stretchVector * noiseFreq + timeVector) + 1.0;
+					noiseFreq *= 3.0;
+					amplitude *= 0.4;
+					stretchVector += (0.125, 0.0, 0.0);
+				}
+
+				return displacementScale * displacement;
 			}
 	
 			void main()
 			{
-				/* Approximating new normals (per fragment) */
-				/*
-				// Step length
-				float h = 0.0001;
-				// Forward difference points
-				vec3 fPoint_x = fragWorldPos.xyz + vec3(h, 0.0, 0.0);
-				vec3 fPoint_y = fragWorldPos.xyz + vec3(0.0, h, 0.0);
-				// Noise displacement
-				float displacement_fPoint_x = fragmentDisplacement(fPoint_x);
-				float displacement_fPoint_y = fragmentDisplacement(fPoint_y);
-				// Displaced positions
-				vec3 displaced_fPoint_x = fPoint_x + interpolatedNormalWorldSpace * displacement_fPoint_x;
-				vec3 displaced_fPoint_y = fPoint_y + interpolatedNormalWorldSpace * displacement_fPoint_y;
-				// Difference vectors
-				vec3 diffVec_x = normalize(fragWorldPos.xyz - displaced_fPoint_x) / h;
-				vec3 diffVec_y = normalize(fragWorldPos.xyz - displaced_fPoint_y) / h;
-				// New normal
-				vec3 newNormal_ws = normalize(cross(diffVec_x, diffVec_y));
-				*/
-				
 				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
 				vec3 specularColor = vec3(1.0, 1.0, 1.0);
 				vec3 viewDirectionWorldSpace = -normalize(cameraPosWorldSpace - fragWorldPos.xyz);
@@ -492,7 +504,8 @@
 				float lightness = (snoise(texCoord3D) + 2.0) / 3.0;
 				
 				// Sample cubemap or 3D noise function
-				vec4 reflectionColor = (cubemapEnabled == 1) ? textureCube(cubemap, reflectionDirWorldSpace) : vec4( hsl2rgb(skyHue, saturation, lightness), 1.0 );
+				vec4 reflectionColor = (cubemapEnabled == 1) ? textureCube(cubemap, reflectionDirWorldSpace)
+															 : vec4( hsl2rgb(skyHue, saturation, lightness), 1.0 );
 
 				// Refraction (seabed)
 				// ===================
@@ -559,7 +572,9 @@
 
 			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
 
-			var container, stats, start;
+			var container
+			var stats;
+			var start;
 			var pauseTime = 0.0;
 			var elapsedPauseTime = 0.0;
 			var animationIsPaused = false;
@@ -582,6 +597,16 @@
 			var sky_height = 1.0;
 			var ampl_gain = 1.0;
 			var sky_tex;
+			var _noiseFreq1 = 4.0;
+			var _noiseFreq2 = 20.0;
+			var _noiseFreq3 = 100.0;
+			var _stretchVector1 = new THREE.Vector3(0.5, 1.0, 1.0);
+			var _stretchVector2 = new THREE.Vector3(0.75, 1.0, 1.0);
+			var _stretchVector3 = new THREE.Vector3(1.0, 1.0, 1.0);
+			var _ampl_freq1 = 10.0 * (1.5 * ampl_gain);
+			var _ampl_freq2 = 3.0;
+			var _ampl_freq3 = 1.0;
+			var _octaves = 3;
 
 			document.addEventListener("keyup", function(event) { 
 				if(event.which == 32) {
@@ -617,7 +642,7 @@
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// Water surface plane
-				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
+				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 512, 512);
 
 				// Textures
 				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg " );
@@ -625,31 +650,44 @@
 				var seabed_tex = THREE.ImageUtils.loadTexture( "img/tex_seabed_01.png" );
 				seabed_tex.minFilter = THREE.LinearFilter;
 				var sky_cubemap = THREE.ImageUtils.loadTextureCube( [ "img/cm_right.jpg", "img/cm_left.jpg",
-                                                                     				  "img/cm_bottom.jpg", "img/cm_top.jpg", 
-                                                                     				  "img/cm_back.jpg", "img/cm_front.jpg" ] )
+                                                     				  "img/cm_bottom.jpg", "img/cm_top.jpg", 
+                                                     				  "img/cm_back.jpg", "img/cm_front.jpg" ] )
 
 				// Shader uniforms
 				uniforms = {
-				    time: { type: "f", value: start},
-				    sunPositionX: { type: "f", value: sunPosition_x},
-				    sunPositionY: { type: "f", value: sunPosition_y},
-				    sunPositionZ: { type: "f", value: sunPosition_z},
-				    planeWidth: { type: "f", value: plane_width},
-				    planeHeight: { type: "f", value: plane_height},
-				    seaDepth: { type: "f", value: sea_depth},
-				    skyHue: { type: "f", value: sky_hue},
-				    waterHue: { type: "f", value: water_hue},
-				    skyHeight: { type: "f", value: sky_height},
-				    reflectivity: { type: "f", value: _reflectivity},
-				    refractivity: { type: "f", value: _refractivity},
-				    displacementScale: { type: "f", value: _displacementScale},
-				    amplGain: { type: "f", value: ampl_gain},
-				    cubemapEnabled: { type: "i", value: _cubemapEnabled},
-				    cameraPosWorldSpace: { type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
+					// floats
+				    time: 					{ type: "f", value: start},
+				    sunPositionX: 			{ type: "f", value: sunPosition_x},
+				    sunPositionY: 			{ type: "f", value: sunPosition_y},
+				    sunPositionZ: 			{ type: "f", value: sunPosition_z},
+				    planeWidth: 			{ type: "f", value: plane_width},
+				    planeHeight: 			{ type: "f", value: plane_height},
+				    seaDepth: 				{ type: "f", value: sea_depth},
+				    skyHue: 				{ type: "f", value: sky_hue},
+				    waterHue: 				{ type: "f", value: water_hue},
+				    skyHeight: 				{ type: "f", value: sky_height},
+				    reflectivity: 			{ type: "f", value: _reflectivity},
+				    refractivity: 			{ type: "f", value: _refractivity},
+				    displacementScale: 		{ type: "f", value: _displacementScale},
+				    amplGain: 				{ type: "f", value: ampl_gain},
+				    noiseFreq1: 			{ type: "f", value: _noiseFreq1},
+				    noiseFreq2: 			{ type: "f", value: _noiseFreq2},
+				    noiseFreq3: 			{ type: "f", value: _noiseFreq3},
+				    ampl_freq1: 			{ type: "f", value: _ampl_freq1},
+				    ampl_freq2: 			{ type: "f", value: _ampl_freq2},
+				    ampl_freq3: 			{ type: "f", value: _ampl_freq3},
+				    // integers
+				    cubemapEnabled: 		{ type: "i", value: _cubemapEnabled},
+				    octaves: 				{ type: "i", value: _octaves},
+				    // vectors
+				    cameraPosWorldSpace: 	{ type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
+				    stretchVector1: 		{ type: "v3", value: _stretchVector1},
+				    stretchVector2: 		{ type: "v3", value: _stretchVector2},
+				    stretchVector3: 		{ type: "v3", value: _stretchVector3},
 				    // Textures
-					skyTexture : { type: "t", value: sky_tex},
-					seabedTexture : { type: "t", value: seabed_tex },
-					cubemap : { type: "t", value: sky_cubemap },
+					skyTexture : 			{ type: "t", value: sky_tex},
+					seabedTexture : 		{ type: "t", value: seabed_tex },
+					cubemap : 				{ type: "t", value: sky_cubemap },
 				};
 
 				// create the custom material
@@ -732,7 +770,8 @@
 				uniforms.refractivity.value = gui_content.refractivity;
 				uniforms.displacementScale.value = gui_content.displacementScale;
 				uniforms.cubemapEnabled.value = (gui_content.cubemapEnabled) ? 1: 0;
-				uniforms.amplGain.value = 0.9 + 0.1 * gui_content.depth;
+				uniforms.cubemapEnabled.value = (gui_content.cubemapEnabled) ? 1: 0;
+				uniforms.octaves.value = gui_content.octaves;
 				
 				renderer.render( scene, camera );
 				
