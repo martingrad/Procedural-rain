@@ -56,7 +56,7 @@
 			gui.add(gui_content, 'reflectivity', 0, 1);
 			gui.add(gui_content, 'refractivity', 0, 1);
 			gui.add(gui_content, 'cubemapEnabled');
-			gui.add(gui_content, 'displacementScale', 0, 1);
+			gui.add(gui_content, 'displacementScale', 0, 10);
 			gui.add(gui_content, 'octaves', 0, 10);
 			//gui.add(gui_content, 'explode');
 		};
@@ -193,15 +193,14 @@
 				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale = 0.0005;
 				
-				
 				float displacement = 0.0;
 				float noiseFreq = 4.0;
 				float amplitude = 10.0 * (1.5 * amplGain);
 				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
 
-				for(int i = 0; i < 3; ++i)
+				for(int i = 0; i < 2; ++i)
 				{
-					if(i >= octaves) break;
+					//if(i >= octaves) break;
 	
 					// Perlin noise function calls, adding bias to return [0, 2]
 					displacement += amplitude * snoise(texScale * worldPos * stretchVector * noiseFreq + timeVector) + 1.0;
@@ -222,8 +221,7 @@
 				gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
 				
 				/* ==== Approximating new normals ==== */
-				/* =================================== */
-				/*			
+				/* =================================== */		
 				// Forward difference sample points
 				float h = 0.01;
 				vec3 forwardPointX = vec3(position.x + h, position.y, position.z);
@@ -249,9 +247,9 @@
 				
 				// New normal
 				vec3 newNormal = normalize(cross(diffVectorX, diffVectorY));
-				*/
+
 				// Transformation of 'varyings'
-				interpolatedNormalWorldSpace = normalize(mat3(modelMatrix) * normal);
+				interpolatedNormalWorldSpace = normalize(mat3(modelMatrix) * newNormal);
 				// interpolatedNormalViewSpace = normalize(mat3(modelViewMatrix) * newNormal);
 				
 				lightDirectionViewSpace = normalize(mat3(viewMatrix) * normalize(vec3(0.0, 1.0, 1.0)));
@@ -443,8 +441,6 @@
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale = 0.0005;
-				
-				
 				float displacement = 0.0;
 				float noiseFreq = 4.0;
 				float amplitude = 10.0 * (1.5 * amplGain);
@@ -463,11 +459,39 @@
 
 				return displacementScale * displacement;
 			}
+
+			vec3 computeNoisyNormal(vec3 pos)
+			{
+				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
+				float texScale  = 0.0005;
+				float noiseFreq = 64.0;
+				float amplitude = 0.64;
+				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
+
+				float h = 0.01;
+				float disp1 = 0.0;
+				float disp2 = 0.0;
+
+				for(int i = 0; i < 5; ++i)
+				{
+					if(i >= octaves) break;
+	
+					// Perlin noise function calls, adding bias to return [0, 2]
+					disp1 += amplitude * snoise(texScale * (pos + vec3(h, 0.0, 0.0)) * stretchVector * noiseFreq + timeVector) + 1.0;
+					disp2 += amplitude * snoise(texScale * (pos + vec3(0.0, h, 0.0)) * stretchVector * noiseFreq + timeVector) + 1.0;
+
+					noiseFreq *= 3.0;
+					amplitude *= 0.4;
+					//stretchVector += (0.125, 0.0, 0.0);
+				}
+
+				return normalize(interpolatedNormalWorldSpace + vec3(disp1, disp2, 0.0) * 0.5);
+			}
 	
 			void main()
 			{
-
 				/* === Per fragment normals */
+				/*
 				float h = 0.01;
 				vec3 pos_c  = fragWorldPos.xyz;
 				vec3 pos_xp = fragWorldPos.xyz + vec3(h, 0.0, 0.0);
@@ -485,6 +509,10 @@
 				vec3 dir2 = normalize(dispPos_yp - dispPos_c);
 
 				vec3 newNormal = cross(dir1, dir2);
+				*/
+
+				// Make normals "noisy" to introduce more shading detail
+				vec3 newNormal = computeNoisyNormal(fragWorldPos.xyz);
 
 				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
 				vec3 specularColor = vec3(1.0, 1.0, 1.0);
@@ -658,7 +686,7 @@
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// Water surface plane
-				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 256, 256);
+				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 64, 64);
 
 				// Textures
 				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg " );
