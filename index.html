@@ -37,11 +37,12 @@
 			this.depth = 1.0;
 			this.skyHue = 220.0 / 360.0;
 			this.waterHue = 230.0 / 360.0;
-			this.reflectivity = 0.5;
-			this.refractivity = 0.5;
+			this.reflectivity = 0.7;
+			this.refractivity = 0.3;
 			this.cubemapEnabled = true;
 			this.displacementScale = 1.0;
 			this.octaves = 3;
+			this.octaves2 = 2;
 			//this.explode = function() {};
 		};
 
@@ -57,7 +58,8 @@
 			gui.add(gui_content, 'refractivity', 0, 1);
 			gui.add(gui_content, 'cubemapEnabled');
 			gui.add(gui_content, 'displacementScale', 0, 10);
-			gui.add(gui_content, 'octaves', 0, 10);
+			gui.add(gui_content, 'octaves', 0, 5);
+			gui.add(gui_content, 'octaves2', 0, 5);
 			//gui.add(gui_content, 'explode');
 		};
 		</script>
@@ -172,6 +174,7 @@
 			uniform float ampl_freq2;
 			uniform float ampl_freq3;
 			uniform int octaves;
+			uniform int octaves2;
 
 			uniform vec3 stretchVector1;
 			uniform vec3 stretchVector2;
@@ -198,9 +201,9 @@
 				float amplitude = 10.0 * (1.5 * amplGain);
 				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
 
-				for(int i = 0; i < 2; ++i)
+				for(int i = 0; i < 5; ++i)
 				{
-					//if(i >= octaves) break;
+					if(i >= octaves) break;
 	
 					// Perlin noise function calls, adding bias to return [0, 2]
 					displacement += amplitude * snoise(texScale * worldPos * stretchVector * noiseFreq + timeVector) + 1.0;
@@ -416,6 +419,7 @@
 			uniform float ampl_freq2;
 			uniform float ampl_freq3;
 			uniform int octaves;
+			uniform int octaves2;
 
 			uniform int cubemapEnabled;
 			
@@ -464,8 +468,8 @@
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale  = 0.0005;
-				float noiseFreq = 64.0;
-				float amplitude = 0.64;
+				float noiseFreq = 128.0;
+				float amplitude = 0.1;
 				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
 
 				float h = 0.01;
@@ -474,15 +478,15 @@
 
 				for(int i = 0; i < 5; ++i)
 				{
-					if(i >= octaves) break;
+					if(i >= octaves2) break;
 	
-					// Perlin noise function calls, adding bias to return [0, 2]
-					disp1 += amplitude * snoise(texScale * (pos + vec3(h, 0.0, 0.0)) * stretchVector * noiseFreq + timeVector) + 1.0;
-					disp2 += amplitude * snoise(texScale * (pos + vec3(0.0, h, 0.0)) * stretchVector * noiseFreq + timeVector) + 1.0;
+					// Perlin noise function calls
+					disp1 += amplitude * snoise(texScale * (pos + vec3(h, 0.0, 0.0)) * stretchVector * noiseFreq + timeVector);
+					disp2 += amplitude * snoise(texScale * (pos + vec3(0.0, h, 0.0)) * stretchVector * noiseFreq + timeVector);
 
 					noiseFreq *= 3.0;
-					amplitude *= 0.4;
-					//stretchVector += (0.125, 0.0, 0.0);
+					amplitude *= 0.6;
+					stretchVector += (0.125, 0.0, 0.0);
 				}
 
 				return normalize(interpolatedNormalWorldSpace + vec3(disp1, disp2, 0.0) * 0.5);
@@ -651,6 +655,7 @@
 			var _ampl_freq2 = 3.0;
 			var _ampl_freq3 = 1.0;
 			var _octaves = 3;
+			var _octaves2 = 3;
 
 			document.addEventListener("keyup", function(event) { 
 				if(event.which == 32) {
@@ -693,9 +698,9 @@
 				sky_tex.minFilter = THREE.LinearFilter;
 				var seabed_tex = THREE.ImageUtils.loadTexture( "img/tex_seabed_01.png" );
 				seabed_tex.minFilter = THREE.LinearFilter;
-				var sky_cubemap = THREE.ImageUtils.loadTextureCube( [ "img/cm_right.jpg", "img/cm_left.jpg",
-                                                     				  "img/cm_bottom.jpg", "img/cm_top.jpg", 
-                                                     				  "img/cm_back.jpg", "img/cm_front.jpg" ] )
+				var sky_cubemap = THREE.ImageUtils.loadTextureCube( [ "img/clouds_right.jpg", "img/clouds_left.jpg",
+                                                     				  "img/clouds_bottom.jpg", "img/clouds_top.jpg", 
+                                                     				  "img/clouds_back.jpg", "img/clouds_front.jpg" ] )
 
 				// Shader uniforms
 				uniforms = {
@@ -723,6 +728,7 @@
 				    // integers
 				    cubemapEnabled: 		{ type: "i", value: _cubemapEnabled},
 				    octaves: 				{ type: "i", value: _octaves},
+				    octaves2: 				{ type: "i", value: _octaves2},
 				    // vectors
 				    cameraPosWorldSpace: 	{ type: "v3", value: new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)},
 				    stretchVector1: 		{ type: "v3", value: _stretchVector1},
@@ -745,7 +751,7 @@
 				var waterSurface = new THREE.Mesh( geometry, shaderMaterial );
 				waterSurface.position.x = 0.0;
 				waterSurface.position.y = 0.0;
-				waterSurface.position.z = -200.0;
+				waterSurface.position.z = 0.0; //-200.0;
 				//waterSurface.rotation.x = -3.14 / 2.0;
 				waterSurface.updateMatrix();
 				waterSurface.matrixAutoUpdate = false;
@@ -816,6 +822,7 @@
 				uniforms.cubemapEnabled.value = (gui_content.cubemapEnabled) ? 1: 0;
 				uniforms.cubemapEnabled.value = (gui_content.cubemapEnabled) ? 1: 0;
 				uniforms.octaves.value = gui_content.octaves;
+				uniforms.octaves2.value = gui_content.octaves2;
 				
 				renderer.render( scene, camera );
 				
