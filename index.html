@@ -71,6 +71,7 @@
 
 		<!-- Shaders -->
 		<script type="x-shader/x-vertex" id="vertexshader">
+			#extension GL_OES_standard_derivatives: enable
 			/* HERE COMES THE NOISE */
 			vec3 mod289(vec3 x) {
 				return x - floor(x * (1.0 / 289.0)) * 289.0;
@@ -195,7 +196,6 @@
 			{
 				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale = 0.0005;
-				
 				float displacement = 0.0;
 				float noiseFreq = 4.0;
 				float amplitude = 10.0 * (1.5 * amplGain);
@@ -212,6 +212,7 @@
 					stretchVector += (0.125, 0.0, 0.0);
 				}
 
+				// return displacementScale * (1.0 - abs(displacement));
 				return displacementScale * displacement;
 			}
 			
@@ -225,6 +226,7 @@
 				
 				/* ==== Approximating new normals ==== */
 				/* =================================== */		
+				
 				// Forward difference sample points
 				float h = 0.01;
 				vec3 forwardPointX = vec3(position.x + h, position.y, position.z);
@@ -264,7 +266,7 @@
 		</script>
 		
 		<script type="x-shader/x-fragment" id="fragmentshader">
-		
+			#extension GL_OES_standard_derivatives: enable
 			#ifdef GL_ES
 			precision highp float;
 			#endif
@@ -464,15 +466,15 @@
 				return displacementScale * displacement;
 			}
 
-			vec3 computeNoisyNormal(vec3 pos)
+			vec3 computeNormalDisplacement(vec3 pos)
 			{
-				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
+				vec3 timeVector = vec3(0.0, time, time) / 2.0;
 				float texScale  = 0.0005;
 				float noiseFreq = 128.0;
 				float amplitude = 0.1;
 				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
 
-				float h = 0.01;
+				float h = 0.001;
 				float disp1 = 0.0;
 				float disp2 = 0.0;
 
@@ -489,7 +491,8 @@
 					stretchVector += (0.125, 0.0, 0.0);
 				}
 
-				return normalize(interpolatedNormalWorldSpace + vec3(disp1, disp2, 0.0) * 0.5);
+				//return normalize(interpolatedNormalWorldSpace + vec3(disp1, disp2, 0.0) * 0.5);
+				return vec3(disp1, disp2, 0.0) * 0.5;
 			}
 	
 			void main()
@@ -516,7 +519,8 @@
 				*/
 
 				// Make normals "noisy" to introduce more shading detail
-				vec3 newNormal = computeNoisyNormal(fragWorldPos.xyz);
+				vec3 normalDisp = computeNormalDisplacement(fragWorldPos.xyz);
+				vec3 newNormal = normalize(interpolatedNormalWorldSpace + normalDisp);
 
 				vec3 diffuseColor = vec3(0.1, 0.2, 0.5);
 				vec3 specularColor = vec3(1.0, 1.0, 1.0);
@@ -526,6 +530,9 @@
 				
 				// Compute reflection direction vector (Blinn-Phong)
 				vec3 reflectionDirWorldSpace = normalize(2.0 * newNormal * dot(newNormal, viewDirectionWorldSpace) - (viewDirectionWorldSpace));
+
+				// If the reflected direction 'points downward', flip its z-value to avoid sampling cubemap in areas with no data
+				reflectionDirWorldSpace.z = (reflectionDirWorldSpace.z > 0.0) ? -reflectionDirWorldSpace.z: reflectionDirWorldSpace.z;
 
 				// Get normalized object coordinates
 				float px = fragWorldPos.x / planeWidth + 0.5;
@@ -577,19 +584,12 @@
 				vec4 refractionColor = texture2D(seabedTexture, texCoord2D_seabed) * (1.0 / refractionAttenuation);
 				refractionColor += waterColor * (1.0 - 1.0 / refractionAttenuation);
 				
-				// Diffuse sky reflection
-				float blubb = pow(dot(vec3(0.0, 0.0, 1.0), newNormal), 8.0);
-				//refractionColor *= blubb;
-
 				// Foam
 				// vec4 foamColor;
-				// vec3 foamStep = vec3(0.01, 0.0, 0.0);
+				// vec3 foamStep = vec3(0.01, 0.01, 0.0);
+				vec3 diff = dFdx(newNormal);
+				vec4 foamColor = (length(diff) > 0.01) ? vec4(1.0, 1.0, 1.0, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 				
-				// float a = fragmentDisplacement(fragWorldPos.xyz);
-				// float b = fragmentDisplacement(fragWorldPos.xyz + foamStep);
-				
-				// foamColor = ((a - b) > 0.2) ? vec4(1.0, 1.0, 1.0, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
-
 				
 				// Composite diffuse (sky), specular (sun) and reflection (sky texture)
 				// ====================================================================
@@ -599,7 +599,7 @@
 				float k_refr = refractivity; //(0.25 + 0.5 * cos_alpha);
 				float k_refl = reflectivity; //(0.25 + 0.5 * (1.0 - cos_alpha));
 				float k_phong = 0.0;
-				float k_foam = 0.5;
+				float k_foam = 0.25;
 
 				gl_FragColor = k_refr * refractionColor + k_refl * reflectionColor;// + k_foam * foamColor;// + k_phong * vec4(diffuseColor * diffuseLighting + specularColor * specularLighting, 1.0);
 			}
@@ -684,14 +684,14 @@
 
 				// Camera
 				camera = new THREE.PerspectiveCamera( 65, window.innerWidth / window.innerHeight, 1, 100000 );
-				camera.position.set(0, 0, 2000);
+				camera.position.set(0, 0, 500);
 
 				// Scene
 				scene = new THREE.Scene();
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
 
 				// Water surface plane
-				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 64, 64);
+				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
 
 				// Textures
 				sky_tex = THREE.ImageUtils.loadTexture( "img/tex_sky_02.jpg " );
