@@ -197,8 +197,8 @@
 				vec3 timeVector = 0.3 * vec3(0.0, time, time) / 2.0;
 				float texScale = 0.0005;
 				float displacement = 0.0;
-				float noiseFreq = 4.0;
-				float amplitude = 10.0 * (1.5 * amplGain);
+				float noiseFreq = 8.0;
+				float amplitude = 4.0 * (1.5 * amplGain);
 				vec3 stretchVector = vec3(0.5, 1.0, 1.0);
 
 				for(int i = 0; i < 5; ++i)
@@ -207,8 +207,8 @@
 	
 					// Perlin noise function calls, adding bias to return [0, 2]
 					displacement += amplitude * snoise(texScale * worldPos * stretchVector * noiseFreq + timeVector) + 1.0;
-					noiseFreq *= 3.0;
-					amplitude *= 0.4;
+					noiseFreq *= 4.0;
+					amplitude *= 0.2;
 					stretchVector += (0.125, 0.0, 0.0);
 				}
 
@@ -620,7 +620,7 @@
 
 			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
 
-			var container
+			var container;
 			var stats;
 			var start;
 			var pauseTime = 0.0;
@@ -656,6 +656,7 @@
 			var _ampl_freq3 = 1.0;
 			var _octaves = 3;
 			var _octaves2 = 3;
+			var skyBox;
 
 			document.addEventListener("keyup", function(event) { 
 				if(event.which == 32) {
@@ -678,17 +679,39 @@
 				render();
 			}
 
-			function init() {
+			function createSkyBox()
+			{
+				var imagePrefix = "img/";
+				var directions  = ["clouds_right", "clouds_left", "clouds_top", "clouds_bottom", "clouds_back", "clouds_front"];
+				var imageSuffix = ".jpg";
+				var skyGeometry = new THREE.CubeGeometry( 2000, 2000, 2000 );	
+				var materialArray = [];
+				
+				for (var i = 0; i < 6; i++)
+					materialArray.push( new THREE.MeshBasicMaterial({
+					map: THREE.ImageUtils.loadTexture( imagePrefix + directions[i] + imageSuffix ),
+					side: THREE.BackSide
+				}));
+				
+				var skyMaterial = new THREE.MeshFaceMaterial( materialArray );
+				skyBox = new THREE.Mesh( skyGeometry, skyMaterial );
+				// skyBox.rotation.y = 3.14/2;
+				scene.add(skyBox);
+			}
 
+			function init()
+			{
 				start = Date.now();
 
 				// Camera
 				camera = new THREE.PerspectiveCamera( 65, window.innerWidth / window.innerHeight, 1, 100000 );
-				camera.position.set(0, 0, 500);
+				camera.position.set(0, 0, 400);
 
 				// Scene
 				scene = new THREE.Scene();
 				scene.fog = new THREE.FogExp2( 0x000000, 0.002 );
+
+				//createSkyBox();
 
 				// Water surface plane
 				var geometry = new THREE.PlaneGeometry( plane_width, plane_height, 128, 128);
@@ -778,9 +801,9 @@
 
 				// Controls
 				controls = new THREE.TrackballControls( camera, renderer.domElement );
-				controls.rotateSpeed = 2.0;
-				// controls.zoomSpeed = 1.2;
-				// controls.panSpeed = 0.8;
+				controls.rotateSpeed = 0.9;
+				controls.zoomSpeed = 0.5;
+				controls.panSpeed = 0.9;
 				// controls.noZoom = false;
 				// controls.noPan = false;
 				// controls.staticMoving = true;
